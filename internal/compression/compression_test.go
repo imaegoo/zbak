@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -49,14 +50,23 @@ func (m *mockFileSystemService) CreateDir(path string) error {
 type mockSevenZipWrapper struct {
 	compressFunc func(params CompressParams) error
 	compressCalls []CompressParams
+	mu           sync.Mutex
 }
 
 func (m *mockSevenZipWrapper) Compress(params CompressParams) error {
+	m.mu.Lock()
 	m.compressCalls = append(m.compressCalls, params)
+	m.mu.Unlock()
 	if m.compressFunc != nil {
 		return m.compressFunc(params)
 	}
 	return nil
+}
+
+func (m *mockSevenZipWrapper) getCompressCallCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.compressCalls)
 }
 
 func TestDetermineStrategy_SmallDirectory(t *testing.T) {
@@ -1138,5 +1148,422 @@ func TestCompressDirectory_LargeWithSubdir_TargetPathHandling(t *testing.T) {
 				t.Errorf("Expected output to end with files.7z.001, got %s", mockZip.compressCalls[0].Output)
 			}
 		})
+	}
+}
+
+// WorkerPool Tests
+
+func TestNewWorkerPool(t *testing.T) {
+	mockFS := &mockFileSystemService{}
+	mockZip := &mockSevenZipWrapper{}
+	service := NewService(mockFS, mockZip)
+
+	tests := []struct {
+		name            string
+		workerCount     int
+		expectedWorkers int
+	}{
+		{
+			name:            "normal worker count",
+			workerCount:     4,
+			expectedWorkers: 4,
+		},
+		{
+			name:            "single worker (serial mode)",
+			workerCount:     1,
+			expectedWorkers: 1,
+		},
+		{
+			name:            "zero workers should default to 1",
+			workerCount:     0,
+			expectedWorkers: 1,
+		},
+		{
+			name:            "negative workers should default to 1",
+			workerCount:     -5,
+			expectedWorkers: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			pool := NewWorkerPool(service, tt.workerCount)
+
+			if pool == nil {
+				t.Error("NewWorkerPool() returned nil")
+			}
+
+			if pool.workerCount != tt.expectedWorkers {
+				t.Errorf("Expected worker count %d, got %d", tt.expectedWorkers, pool.workerCount)
+			}
+
+			if pool.service != service {
+				t.Error("NewWorkerPool() did not set service correctly")
+			}
+
+			if pool.taskChan == nil {
+				t.Error("NewWorkerPool() did not initialize taskChan")
+			}
+
+			if pool.errorChan == nil {
+				t.Error("NewWorkerPool() did not initialize errorChan")
+			}
+
+			if pool.doneChan == nil {
+				t.Error("NewWorkerPool() did not initialize doneChan")
+			}
+		})
+	}
+}
+
+func TestWorkerPool_SerialExecution(t *testing.T) {
+	// Test serial execution (concurrency = 1)
+	// Requirement 9.2: Support serial execution when concurrency=1
+
+	mockFS := &mockFileSystemService{
+		createDirFunc: func(path string) error {
+			return nil
+		},
+	}
+
+	mockZip := &mockSevenZipWrapper{}
+	service := NewService(mockFS, mockZip)
+
+	pool := NewWorkerPool(service, 1)
+	ctx := context.Background()
+	pool.Start(ctx)
+
+	// Submit multiple tasks
+	tasks := []CompressionTask{
+		{
+			SourcePath: "/source/dir1",
+			TargetPath: "/target/dir1",
+			Password:   "test123",
+			VolumeSize: 1024,
+			Strategy:   StrategySmallDir,
+		},
+		{
+			SourcePath: "/source/dir2",
+			TargetPath: "/target/dir2",
+			Password:   "test123",
+			VolumeSize: 1024,
+			Strategy:   StrategySmallDir,
+		},
+		{
+			SourcePath: "/source/dir3",
+			TargetPath: "/target/dir3",
+			Password:   "test123",
+			VolumeSize: 1024,
+			Strategy:   StrategySmallDir,
+		},
+	}
+
+	for _, task := range tasks {
+		pool.Submit(task)
+	}
+
+	errors := pool.Wait()
+
+	// Verify no errors
+	if len(errors) != 0 {
+		t.Errorf("Expected no errors, got %d errors", len(errors))
+	}
+
+	// Verify all tasks were executed
+	if len(mockZip.compressCalls) != len(tasks) {
+		t.Errorf("Expected %d compress calls, got %d", len(tasks), len(mockZip.compressCalls))
+	}
+}
+
+func TestWorkerPool_ParallelExecution(t *testing.T) {
+	// Test parallel execution (concurrency > 1)
+	// Requirement 9.3: Support parallel execution when concurrency>1
+
+	mockFS := &mockFileSystemService{
+		createDirFunc: func(path string) error {
+			return nil
+		},
+	}
+
+	mockZip := &mockSevenZipWrapper{}
+	service := NewService(mockFS, mockZip)
+
+	pool := NewWorkerPool(service, 4)
+	ctx := context.Background()
+	pool.Start(ctx)
+
+	// Submit multiple tasks
+	taskCount := 10
+	for i := 0; i < taskCount; i++ {
+		task := CompressionTask{
+			SourcePath: filepath.Join("/source", "dir"+string(rune(i))),
+			TargetPath: filepath.Join("/target", "dir"+string(rune(i))),
+			Password:   "test123",
+			VolumeSize: 1024,
+			Strategy:   StrategySmallDir,
+		}
+		pool.Submit(task)
+	}
+
+	errors := pool.Wait()
+
+	// Verify no errors
+	if len(errors) != 0 {
+		t.Errorf("Expected no errors, got %d errors", len(errors))
+	}
+
+	// Verify all tasks were executed
+	callCount := mockZip.getCompressCallCount()
+	if callCount != taskCount {
+		t.Errorf("Expected %d compress calls, got %d", taskCount, callCount)
+	}
+}
+
+func TestWorkerPool_ErrorCollection(t *testing.T) {
+	// Test error collection from failed tasks
+	// Requirements 10.1, 10.2: Collect errors from failed tasks
+
+	mockFS := &mockFileSystemService{
+		createDirFunc: func(path string) error {
+			return nil
+		},
+	}
+
+	// Mock that fails on specific paths
+	mockZip := &mockSevenZipWrapper{
+		compressFunc: func(params CompressParams) error {
+			if strings.Contains(params.Sources[0], "fail") {
+				return errors.New("compression failed")
+			}
+			return nil
+		},
+	}
+
+	service := NewService(mockFS, mockZip)
+	pool := NewWorkerPool(service, 2)
+	ctx := context.Background()
+	pool.Start(ctx)
+
+	// Submit tasks, some will fail
+	tasks := []CompressionTask{
+		{
+			SourcePath: "/source/success1",
+			TargetPath: "/target/success1",
+			Password:   "test123",
+			VolumeSize: 1024,
+			Strategy:   StrategySmallDir,
+		},
+		{
+			SourcePath: "/source/fail1",
+			TargetPath: "/target/fail1",
+			Password:   "test123",
+			VolumeSize: 1024,
+			Strategy:   StrategySmallDir,
+		},
+		{
+			SourcePath: "/source/success2",
+			TargetPath: "/target/success2",
+			Password:   "test123",
+			VolumeSize: 1024,
+			Strategy:   StrategySmallDir,
+		},
+		{
+			SourcePath: "/source/fail2",
+			TargetPath: "/target/fail2",
+			Password:   "test123",
+			VolumeSize: 1024,
+			Strategy:   StrategySmallDir,
+		},
+	}
+
+	for _, task := range tasks {
+		pool.Submit(task)
+	}
+
+	errors := pool.Wait()
+
+	// Verify we collected 2 errors
+	if len(errors) != 2 {
+		t.Errorf("Expected 2 errors, got %d", len(errors))
+	}
+
+	// Verify error messages contain the failed paths
+	errorMessages := make([]string, len(errors))
+	for i, err := range errors {
+		errorMessages[i] = err.Error()
+	}
+
+	failCount := 0
+	for _, msg := range errorMessages {
+		if strings.Contains(msg, "fail") {
+			failCount++
+		}
+	}
+
+	if failCount != 2 {
+		t.Errorf("Expected 2 errors containing 'fail', got %d", failCount)
+	}
+
+	// Verify all tasks were attempted (4 compress calls)
+	if len(mockZip.compressCalls) != len(tasks) {
+		t.Errorf("Expected %d compress calls, got %d", len(tasks), len(mockZip.compressCalls))
+	}
+}
+
+func TestWorkerPool_WaitForCompletion(t *testing.T) {
+	// Test that Wait() blocks until all tasks complete
+	// Requirement 9.4: Wait for all tasks to complete
+
+	mockFS := &mockFileSystemService{
+		createDirFunc: func(path string) error {
+			return nil
+		},
+	}
+
+	mockZip := &mockSevenZipWrapper{}
+	service := NewService(mockFS, mockZip)
+
+	pool := NewWorkerPool(service, 2)
+	ctx := context.Background()
+	pool.Start(ctx)
+
+	// Submit tasks
+	taskCount := 5
+	for i := 0; i < taskCount; i++ {
+		task := CompressionTask{
+			SourcePath: filepath.Join("/source", "dir"+string(rune(i))),
+			TargetPath: filepath.Join("/target", "dir"+string(rune(i))),
+			Password:   "test123",
+			VolumeSize: 1024,
+			Strategy:   StrategySmallDir,
+		}
+		pool.Submit(task)
+	}
+
+	// Wait should block until all tasks complete
+	errors := pool.Wait()
+
+	// After Wait() returns, all tasks should be complete
+	if len(errors) != 0 {
+		t.Errorf("Expected no errors, got %d", len(errors))
+	}
+
+	if len(mockZip.compressCalls) != taskCount {
+		t.Errorf("Expected %d compress calls after Wait(), got %d", taskCount, len(mockZip.compressCalls))
+	}
+}
+
+func TestWorkerPool_ContextCancellation(t *testing.T) {
+	// Test that workers respect context cancellation
+
+	mockFS := &mockFileSystemService{
+		createDirFunc: func(path string) error {
+			return nil
+		},
+	}
+
+	mockZip := &mockSevenZipWrapper{}
+	service := NewService(mockFS, mockZip)
+
+	pool := NewWorkerPool(service, 2)
+	ctx, cancel := context.WithCancel(context.Background())
+	pool.Start(ctx)
+
+	// Submit a task
+	task := CompressionTask{
+		SourcePath: "/source/dir1",
+		TargetPath: "/target/dir1",
+		Password:   "test123",
+		VolumeSize: 1024,
+		Strategy:   StrategySmallDir,
+	}
+	pool.Submit(task)
+
+	// Cancel context immediately
+	cancel()
+
+	// Wait for completion
+	errors := pool.Wait()
+
+	// We should have either 0 or 1 compress calls depending on timing
+	// The important thing is that it doesn't hang
+	if len(mockZip.compressCalls) > 1 {
+		t.Errorf("Expected at most 1 compress call, got %d", len(mockZip.compressCalls))
+	}
+
+	// Errors may or may not be present depending on timing
+	_ = errors
+}
+
+func TestWorkerPool_EmptyQueue(t *testing.T) {
+	// Test that Wait() works correctly with no tasks submitted
+
+	mockFS := &mockFileSystemService{}
+	mockZip := &mockSevenZipWrapper{}
+	service := NewService(mockFS, mockZip)
+
+	pool := NewWorkerPool(service, 2)
+	ctx := context.Background()
+	pool.Start(ctx)
+
+	// Don't submit any tasks, just wait
+	errors := pool.Wait()
+
+	// Should have no errors
+	if len(errors) != 0 {
+		t.Errorf("Expected no errors, got %d", len(errors))
+	}
+
+	// Should have no compress calls
+	if len(mockZip.compressCalls) != 0 {
+		t.Errorf("Expected no compress calls, got %d", len(mockZip.compressCalls))
+	}
+}
+
+func TestWorkerPool_MultipleErrors(t *testing.T) {
+	// Test that all errors are collected when multiple tasks fail
+
+	mockFS := &mockFileSystemService{
+		createDirFunc: func(path string) error {
+			return nil
+		},
+	}
+
+	// Mock that always fails
+	mockZip := &mockSevenZipWrapper{
+		compressFunc: func(params CompressParams) error {
+			return errors.New("compression failed")
+		},
+	}
+
+	service := NewService(mockFS, mockZip)
+	pool := NewWorkerPool(service, 3)
+	ctx := context.Background()
+	pool.Start(ctx)
+
+	// Submit multiple tasks that will all fail
+	taskCount := 10
+	for i := 0; i < taskCount; i++ {
+		task := CompressionTask{
+			SourcePath: filepath.Join("/source", "dir"+string(rune(i))),
+			TargetPath: filepath.Join("/target", "dir"+string(rune(i))),
+			Password:   "test123",
+			VolumeSize: 1024,
+			Strategy:   StrategySmallDir,
+		}
+		pool.Submit(task)
+	}
+
+	errors := pool.Wait()
+
+	// All tasks should have failed
+	if len(errors) != taskCount {
+		t.Errorf("Expected %d errors, got %d", taskCount, len(errors))
+	}
+
+	// All tasks should have been attempted
+	callCount := mockZip.getCompressCallCount()
+	if callCount != taskCount {
+		t.Errorf("Expected %d compress calls, got %d", taskCount, callCount)
 	}
 }

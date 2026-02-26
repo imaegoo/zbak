@@ -8,7 +8,7 @@
   },
   "then": {
     "type": "askAgent",
-    "prompt": "执行 git add . && git commit -m \"任务简介\""
+    "prompt": "执行 git add .; git commit -m \"任务简介\""
   },
   "workspaceFolderName": "zbak",
   "shortName": "auto-commit-task"

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 )
 
 // CompressionStrategy represents the strategy to use for compressing a directory
@@ -263,4 +264,104 @@ func (s *Service) compressLargeWithSubdir(ctx context.Context, task CompressionT
 	}
 
 	return nil
+}
+
+// WorkerPool manages concurrent compression tasks
+// Requirements: 9.1, 9.2, 9.3, 9.4
+type WorkerPool struct {
+	service     *Service
+	workerCount int
+	taskChan    chan CompressionTask
+	errorChan   chan error
+	doneChan    chan struct{}
+	errors      []error
+	wg          sync.WaitGroup
+}
+
+// NewWorkerPool creates a new WorkerPool instance
+func NewWorkerPool(service *Service, workerCount int) *WorkerPool {
+	if workerCount < 1 {
+		workerCount = 1
+	}
+	
+	return &WorkerPool{
+		service:     service,
+		workerCount: workerCount,
+		taskChan:    make(chan CompressionTask, workerCount*2),
+		errorChan:   make(chan error, workerCount*2),
+		doneChan:    make(chan struct{}),
+		errors:      make([]error, 0),
+	}
+}
+
+// Start initializes and starts the worker goroutines
+// Requirement 9.1: Create worker goroutines pool
+func (wp *WorkerPool) Start(ctx context.Context) {
+	// Start error collector goroutine
+	go wp.collectErrors()
+	
+	// Start worker goroutines
+	for i := 0; i < wp.workerCount; i++ {
+		wp.wg.Add(1)
+		go wp.worker(ctx)
+	}
+}
+
+// worker is the goroutine that processes compression tasks
+// Requirements 9.2, 9.3: Support serial (concurrency=1) and parallel (concurrency>1) execution
+func (wp *WorkerPool) worker(ctx context.Context) {
+	defer wp.wg.Done()
+	
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case task, ok := <-wp.taskChan:
+			if !ok {
+				return
+			}
+			
+			// Execute compression task
+			if err := wp.service.CompressDirectory(ctx, task); err != nil {
+				wp.errorChan <- fmt.Errorf("compression task failed for %s: %w", task.SourcePath, err)
+			}
+		}
+	}
+}
+
+// collectErrors collects errors from worker goroutines
+// Requirement 10.1, 10.2: Collect errors from failed tasks
+func (wp *WorkerPool) collectErrors() {
+	for err := range wp.errorChan {
+		wp.errors = append(wp.errors, err)
+	}
+	close(wp.doneChan)
+}
+
+// Submit adds a compression task to the queue
+func (wp *WorkerPool) Submit(task CompressionTask) {
+	wp.taskChan <- task
+}
+
+// Wait waits for all tasks to complete and returns any errors
+// Requirement 9.4: Wait for all tasks to complete
+func (wp *WorkerPool) Wait() []error {
+	// Close task channel to signal workers to stop
+	close(wp.taskChan)
+	
+	// Wait for all workers to finish
+	wp.wg.Wait()
+	
+	// Close error channel after all workers are done
+	close(wp.errorChan)
+	
+	// Wait for error collector to finish
+	<-wp.doneChan
+	
+	return wp.errors
+}
+
+// Stop stops the worker pool
+func (wp *WorkerPool) Stop() {
+	close(wp.taskChan)
 }
