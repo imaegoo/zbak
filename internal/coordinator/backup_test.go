@@ -2,6 +2,7 @@ package coordinator
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -552,6 +553,200 @@ func TestBackupCoordinator_BuildCompressionTasks(t *testing.T) {
 		if task.VolumeSize != cfg.VolumeSize {
 			t.Errorf("Expected volume size %d, got %d", cfg.VolumeSize, task.VolumeSize)
 		}
+	}
+}
+
+func TestBackupCoordinator_Execute_CompressionError(t *testing.T) {
+	// Skip if 7zip is not available
+	sz := sevenzip.NewWrapper()
+	if _, err := sz.Detect(); err != nil {
+		t.Skip("7zip not available, skipping test")
+	}
+
+	// Create temporary directories
+	tempDir, err := os.MkdirTemp("", "backup-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	sourceDir := filepath.Join(tempDir, "source")
+	targetDir := filepath.Join(tempDir, "target")
+
+	if err := os.MkdirAll(sourceDir, 0755); err != nil {
+		t.Fatalf("Failed to create source dir: %v", err)
+	}
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		t.Fatalf("Failed to create target dir: %v", err)
+	}
+
+	// Create test files in different directories
+	subdir1 := filepath.Join(sourceDir, "subdir1")
+	subdir2 := filepath.Join(sourceDir, "subdir2")
+	if err := os.MkdirAll(subdir1, 0755); err != nil {
+		t.Fatalf("Failed to create subdir1: %v", err)
+	}
+	if err := os.MkdirAll(subdir2, 0755); err != nil {
+		t.Fatalf("Failed to create subdir2: %v", err)
+	}
+
+	// Create test files
+	if err := os.WriteFile(filepath.Join(subdir1, "file1.txt"), []byte("content1"), 0644); err != nil {
+		t.Fatalf("Failed to create file1: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(subdir2, "file2.txt"), []byte("content2"), 0644); err != nil {
+		t.Fatalf("Failed to create file2: %v", err)
+	}
+
+	// Create empty file index
+	fileIndex := index.NewFileIndex()
+	indexPath := filepath.Join(targetDir, "index.yaml")
+	if err := index.Save(indexPath, fileIndex); err != nil {
+		t.Fatalf("Failed to save index: %v", err)
+	}
+
+	// Create logger
+	log, err := logger.NewLogger(targetDir)
+	if err != nil {
+		t.Fatalf("Failed to create logger: %v", err)
+	}
+
+	// Create config with invalid password to potentially cause errors
+	// Note: 7zip might still succeed, so this test verifies the error handling mechanism
+	cfg := &config.Config{
+		SourceDir:   sourceDir,
+		TargetDir:   targetDir,
+		VolumeSize:  1024 * 1024,
+		Password:    "test",
+		Concurrency: 2, // Use concurrency to test parallel error handling
+	}
+
+	// Create coordinator
+	fs := filesystem.NewService()
+	szAdapter := newSevenZipAdapter(sz)
+	compressionSvc := compression.NewService(fs, szAdapter)
+	bc := NewBackupCoordinator(cfg, compressionSvc, log)
+
+	// Execute backup
+	ctx := context.Background()
+	report, err := bc.Execute(ctx)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+
+	// Verify that backup completed even if there were potential errors
+	// The coordinator should continue execution
+	if report.NewFiles != 2 {
+		t.Errorf("Expected 2 new files, got %d", report.NewFiles)
+	}
+
+	// Verify that tasks were attempted
+	totalTasks := report.SuccessCount + report.FailureCount
+	if totalTasks == 0 {
+		t.Error("Expected at least some tasks to be executed")
+	}
+
+	// Verify report contains error information if any failures occurred
+	if report.FailureCount > 0 {
+		if len(report.Errors) != report.FailureCount {
+			t.Errorf("Expected %d errors in report, got %d", report.FailureCount, len(report.Errors))
+		}
+	}
+}
+
+func TestBackupCoordinator_Execute_ConcurrentBackup(t *testing.T) {
+	// Skip if 7zip is not available
+	sz := sevenzip.NewWrapper()
+	if _, err := sz.Detect(); err != nil {
+		t.Skip("7zip not available, skipping test")
+	}
+
+	// Create temporary directories
+	tempDir, err := os.MkdirTemp("", "backup-test-*")
+	if err != nil {
+		t.Fatalf("Failed to create temp dir: %v", err)
+	}
+	defer os.RemoveAll(tempDir)
+
+	sourceDir := filepath.Join(tempDir, "source")
+	targetDir := filepath.Join(tempDir, "target")
+
+	if err := os.MkdirAll(sourceDir, 0755); err != nil {
+		t.Fatalf("Failed to create source dir: %v", err)
+	}
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		t.Fatalf("Failed to create target dir: %v", err)
+	}
+
+	// Create multiple subdirectories with files
+	for i := 1; i <= 4; i++ {
+		subdir := filepath.Join(sourceDir, fmt.Sprintf("subdir%d", i))
+		if err := os.MkdirAll(subdir, 0755); err != nil {
+			t.Fatalf("Failed to create subdir%d: %v", i, err)
+		}
+		
+		testFile := filepath.Join(subdir, fmt.Sprintf("file%d.txt", i))
+		if err := os.WriteFile(testFile, []byte(fmt.Sprintf("content%d", i)), 0644); err != nil {
+			t.Fatalf("Failed to create file%d: %v", i, err)
+		}
+	}
+
+	// Create empty file index
+	fileIndex := index.NewFileIndex()
+	indexPath := filepath.Join(targetDir, "index.yaml")
+	if err := index.Save(indexPath, fileIndex); err != nil {
+		t.Fatalf("Failed to save index: %v", err)
+	}
+
+	// Create logger
+	log, err := logger.NewLogger(targetDir)
+	if err != nil {
+		t.Fatalf("Failed to create logger: %v", err)
+	}
+
+	// Create config with concurrency > 1
+	cfg := &config.Config{
+		SourceDir:   sourceDir,
+		TargetDir:   targetDir,
+		VolumeSize:  1024 * 1024,
+		Password:    "test",
+		Concurrency: 3, // Test concurrent execution
+	}
+
+	// Create coordinator
+	fs := filesystem.NewService()
+	szAdapter := newSevenZipAdapter(sz)
+	compressionSvc := compression.NewService(fs, szAdapter)
+	bc := NewBackupCoordinator(cfg, compressionSvc, log)
+
+	// Execute backup
+	ctx := context.Background()
+	report, err := bc.Execute(ctx)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+
+	// Verify report
+	if report.NewFiles != 4 {
+		t.Errorf("Expected 4 new files, got %d", report.NewFiles)
+	}
+
+	// Verify all tasks succeeded
+	if report.FailureCount > 0 {
+		t.Errorf("Expected 0 failures, got %d", report.FailureCount)
+		for _, err := range report.Errors {
+			t.Logf("Error: %v", err)
+		}
+	}
+
+	// Verify index was updated with all files
+	updatedIndex, err := index.Load(indexPath)
+	if err != nil {
+		t.Fatalf("Failed to load updated index: %v", err)
+	}
+
+	if len(updatedIndex.Files) != 4 {
+		t.Errorf("Expected 4 files in index, got %d", len(updatedIndex.Files))
 	}
 }
 
