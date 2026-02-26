@@ -237,11 +237,12 @@ func (bc *BackupCoordinator) buildCompressionTasks(changeSet *detector.ChangeSet
 
 		// Create compression task
 		task := compression.CompressionTask{
-			SourcePath: sourcePath,
-			TargetPath: targetPath,
-			Password:   bc.config.Password,
-			VolumeSize: bc.config.VolumeSize,
-			Strategy:   strategy,
+			SourcePath:       sourcePath,
+			TargetPath:       targetPath,
+			Password:         bc.config.Password,
+			VolumeSize:       bc.config.VolumeSize,
+			Strategy:         strategy,
+			CompressionLevel: *bc.config.CompressionLevel,
 		}
 
 		tasks = append(tasks, task)

@@ -15,3 +15,7 @@ password: your_secure_password
 
 # 并发数（同时执行压缩任务的数量，最小值为1）
 concurrency: 4
+
+# 压缩级别 (0-9)，0=存储，1=极速，5=正常，9=最大压缩
+# 默认为 1 (极速压缩)
+compression_level: 1

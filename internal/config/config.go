@@ -12,8 +12,9 @@ type Config struct {
 	SourceDir   string `yaml:"source_dir"`
 	TargetDir   string `yaml:"target_dir"`
 	VolumeSize  int64  `yaml:"volume_size"`
-	Password    string `yaml:"password"`
-	Concurrency int    `yaml:"concurrency"`
+	Password         string `yaml:"password"`
+	Concurrency      int    `yaml:"concurrency"`
+	CompressionLevel *int   `yaml:"compression_level"`
 }
 
 // ConfigManager 配置管理器接口
@@ -69,6 +70,13 @@ func (cm *configManager) Validate(config *Config) error {
 	}
 	if config.Concurrency < 1 {
 		return ErrMissingRequiredField("concurrency")
+	}
+	if config.CompressionLevel == nil {
+		level := 1
+		config.CompressionLevel = &level
+	}
+	if *config.CompressionLevel < 0 || *config.CompressionLevel > 9 {
+		return fmt.Errorf("invalid compression_level: must be between 0 and 9")
 	}
 	return nil
 }

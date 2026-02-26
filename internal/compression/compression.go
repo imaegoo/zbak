@@ -63,9 +63,10 @@ type CompressParams = sevenzip.CompressParams
 type CompressionTask struct {
 	SourcePath string
 	TargetPath string
-	Password   string
-	VolumeSize int64
-	Strategy   CompressionStrategy
+	Password         string
+	VolumeSize       int64
+	Strategy         CompressionStrategy
+	CompressionLevel int
 }
 
 // Service provides compression operations for the backup tool
@@ -168,10 +169,11 @@ func (s *Service) compressSmallDir(ctx context.Context, task CompressionTask) er
 
 	// Compress the entire directory
 	params := CompressParams{
-		Sources:    []string{task.SourcePath},
-		Output:     outputFile,
-		Password:   task.Password,
-		VolumeSize: 0, // No volume splitting for small directories
+		Sources:          []string{task.SourcePath},
+		Output:           outputFile,
+		Password:         task.Password,
+		VolumeSize:       0, // No volume splitting for small directories
+		CompressionLevel: task.CompressionLevel,
 	}
 
 	if err := s.sevenZip.Compress(params); err != nil {
@@ -200,10 +202,11 @@ func (s *Service) compressLargeNoSubdir(ctx context.Context, task CompressionTas
 
 	// Compress with volume splitting
 	params := CompressParams{
-		Sources:    []string{task.SourcePath},
-		Output:     outputFile,
-		Password:   task.Password,
-		VolumeSize: task.VolumeSize,
+		Sources:          []string{task.SourcePath},
+		Output:           outputFile,
+		Password:         task.Password,
+		VolumeSize:       task.VolumeSize,
+		CompressionLevel: task.CompressionLevel,
 	}
 
 	if err := s.sevenZip.Compress(params); err != nil {
@@ -257,11 +260,12 @@ func (s *Service) compressLargeWithSubdir(ctx context.Context, task CompressionT
 
 		// Create subtask
 		subtask := CompressionTask{
-			SourcePath: subdir,
-			TargetPath: subdirTarget,
-			Password:   task.Password,
-			VolumeSize: task.VolumeSize,
-			Strategy:   strategy,
+			SourcePath:       subdir,
+			TargetPath:       subdirTarget,
+			Password:         task.Password,
+			VolumeSize:       task.VolumeSize,
+			Strategy:         strategy,
+			CompressionLevel: task.CompressionLevel,
 		}
 
 		// Recursively compress subdirectory
@@ -284,10 +288,11 @@ func (s *Service) compressLargeWithSubdir(ctx context.Context, task CompressionT
 		// So we only specify .7z to avoid .7z.001.001
 		filesOutput := filepath.Join(targetDir, "zbaksubfiles.7z")
 		params := CompressParams{
-			Sources:    files,
-			Output:     filesOutput,
-			Password:   task.Password,
-			VolumeSize: task.VolumeSize,
+			Sources:          files,
+			Output:           filesOutput,
+			Password:         task.Password,
+			VolumeSize:       task.VolumeSize,
+			CompressionLevel: task.CompressionLevel,
 		}
 
 		if err := s.sevenZip.Compress(params); err != nil {

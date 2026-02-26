@@ -86,6 +86,7 @@ target_dir: /path/to/backup/target # 目标目录路径
 volume_size: 4294967296            # 分卷大小（4GB，单位：字节）
 password: your_secure_password     # 加密密码
 concurrency: 4                     # 并发数
+compression_level: 1               # 压缩级别 (0-9)，默认为1
 ```
 
 ### 使用
@@ -165,6 +166,7 @@ target_dir/
 | `volume_size` | int64 | 是 | 分卷大小（字节），建议4GB（4294967296） |
 | `password` | string | 是 | 加密密码，用于7zip AES-256加密 |
 | `concurrency` | int | 是 | 并发压缩任务数，建议设置为CPU核心数 |
+| `compression_level` | int | 否 | 压缩级别 (0-9)，默认为1（极速）。0=存储，1=极速，5=正常，9=最大压缩 |
 
 ## 📊 性能特点
 

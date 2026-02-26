@@ -46,6 +46,69 @@ concurrency: 4
 	if config.Concurrency != 4 {
 		t.Errorf("Concurrency = %d; want 4", config.Concurrency)
 	}
+	if config.CompressionLevel == nil || *config.CompressionLevel != 1 {
+		t.Errorf("CompressionLevel = %v; want 1", config.CompressionLevel)
+	}
+}
+
+// TestConfigManager_Load_CompressionLevel 测试压缩级别配置
+func TestConfigManager_Load_CompressionLevel(t *testing.T) {
+	tests := []struct {
+		name             string
+		compressionLevel string
+		expectedLevel    int
+		expectError      bool
+	}{
+		{"默认值(未指定)", "", 1, false},
+		{"有效值0", "0", 0, false},
+		{"有效值1", "1", 1, false},
+		{"有效值9", "9", 9, false},
+		{"无效值-1", "-1", 0, true},
+		{"无效值10", "10", 0, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmpDir := t.TempDir()
+			configPath := filepath.Join(tmpDir, "config.yaml")
+
+			configStr := `source_dir: /path/to/source
+target_dir: /path/to/target
+volume_size: 4294967296
+password: test_password
+concurrency: 4
+`
+			if tt.compressionLevel != "" {
+				configStr += "compression_level: " + tt.compressionLevel + "\n"
+			}
+
+			if err := os.WriteFile(configPath, []byte(configStr), 0644); err != nil {
+				t.Fatalf("创建测试配置文件失败: %v", err)
+			}
+
+			cm := NewConfigManager()
+			config, err := cm.Load(configPath)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("期望错误，但没有返回错误")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("加载配置失败: %v", err)
+			}
+
+			if config.CompressionLevel == nil {
+				t.Fatal("CompressionLevel 为 nil")
+			}
+
+			if *config.CompressionLevel != tt.expectedLevel {
+				t.Errorf("CompressionLevel = %d; want %d", *config.CompressionLevel, tt.expectedLevel)
+			}
+		})
+	}
 }
 
 // TestConfigManager_Load_FileNotFound 测试配置文件不存在错误

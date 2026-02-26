@@ -19,8 +19,9 @@ type Wrapper interface {
 type CompressParams struct {
 	Sources    []string // 源文件或目录列表
 	Output     string   // 输出文件路径
-	Password   string   // 加密密码
-	VolumeSize int64    // 分卷大小（字节）
+	Password         string   // 加密密码
+	VolumeSize       int64    // 分卷大小（字节）
+	CompressionLevel int      // 压缩级别（0-9）
 }
 
 // ExtractParams 解压参数
@@ -69,11 +70,11 @@ func (w *wrapper) Compress(params CompressParams) error {
 
 	// 构建命令参数
 	args := []string{
-		"a",                    // 添加到压缩文件
-		"-t7z",                 // 使用7z格式
-		"-mx=5",                // 压缩级别（5=正常）
-		"-mhe=on",              // 加密文件头
-		"-p" + params.Password, // 密码
+		"a",                                            // 添加到压缩文件
+		"-t7z",                                         // 使用7z格式
+		"-mx=" + strconv.Itoa(params.CompressionLevel), // 压缩级别
+		"-mhe=on",                                      // 加密文件头
+		"-p" + params.Password,                         // 密码
 	}
 
 	// 添加分卷大小参数（如果指定）
@@ -147,7 +148,7 @@ func (w *wrapper) buildCommand(operation string, params interface{}) []string {
 		args = []string{
 			"a",
 			"-t7z",
-			"-mx=5",
+			"-mx=" + strconv.Itoa(p.CompressionLevel),
 			"-mhe=on",
 			"-p" + p.Password,
 		}
