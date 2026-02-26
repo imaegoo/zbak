@@ -72,13 +72,20 @@ type CompressionTask struct {
 type Service struct {
 	fs      FileSystemService
 	sevenZip SevenZipWrapper
+	logger  Logger
+}
+
+// Logger defines the interface for logging
+type Logger interface {
+	Debug(msg string, args ...interface{})
 }
 
 // NewService creates a new CompressionService instance
-func NewService(fs FileSystemService, sevenZip SevenZipWrapper) *Service {
+func NewService(fs FileSystemService, sevenZip SevenZipWrapper, logger Logger) *Service {
 	return &Service{
 		fs:      fs,
 		sevenZip: sevenZip,
+		logger:  logger,
 	}
 }
 
@@ -98,12 +105,12 @@ func (s *Service) DetermineStrategy(dirPath string, volumeSize int64) (Compressi
 	}
 
 	// Log strategy decision for debugging
-	fmt.Printf("[DEBUG] DetermineStrategy: path=%s, size=%d bytes (%.2f MB), volumeSize=%d bytes (%.2f GB)\n",
+	s.logger.Debug("DetermineStrategy: path=%s, size=%d bytes (%.2f MB), volumeSize=%d bytes (%.2f GB)",
 		dirPath, dirSize, float64(dirSize)/(1024*1024), volumeSize, float64(volumeSize)/(1024*1024*1024))
 
 	// Small directory: compress as single file
 	if dirSize < volumeSize {
-		fmt.Printf("[DEBUG] Strategy: SmallDir (size < volumeSize)\n")
+		s.logger.Debug("Strategy: SmallDir (size < volumeSize)")
 		return StrategySmallDir, nil
 	}
 
@@ -114,11 +121,11 @@ func (s *Service) DetermineStrategy(dirPath string, volumeSize int64) (Compressi
 	}
 
 	if hasSubdirs {
-		fmt.Printf("[DEBUG] Strategy: LargeWithSubdir (size >= volumeSize && hasSubdirs)\n")
+		s.logger.Debug("Strategy: LargeWithSubdir (size >= volumeSize && hasSubdirs)")
 		return StrategyLargeWithSubdir, nil
 	}
 
-	fmt.Printf("[DEBUG] Strategy: LargeNoSubdir (size >= volumeSize && !hasSubdirs)\n")
+	s.logger.Debug("Strategy: LargeNoSubdir (size >= volumeSize && !hasSubdirs)")
 	return StrategyLargeNoSubdir, nil
 }
 
@@ -156,7 +163,7 @@ func (s *Service) compressSmallDir(ctx context.Context, task CompressionTask) er
 		}
 	}
 
-	fmt.Printf("[DEBUG] compressSmallDir: source=%s, target=%s, output=%s\n", 
+	s.logger.Debug("compressSmallDir: source=%s, target=%s, output=%s", 
 		task.SourcePath, task.TargetPath, outputFile)
 
 	// Compress the entire directory
@@ -171,7 +178,7 @@ func (s *Service) compressSmallDir(ctx context.Context, task CompressionTask) er
 		return fmt.Errorf("failed to compress small directory: %w", err)
 	}
 
-	fmt.Printf("[DEBUG] compressSmallDir: compression completed successfully\n")
+	s.logger.Debug("compressSmallDir: compression completed successfully")
 	return nil
 }
 

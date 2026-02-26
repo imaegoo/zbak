@@ -57,6 +57,7 @@ func runBackup(args []string) error {
 	// 创建backup子命令的flag set
 	flagSet := flag.NewFlagSet("backup", flag.ExitOnError)
 	configPath := flagSet.String("config", "config.yaml", "配置文件路径")
+	debugMode := flagSet.Bool("debug", false, "启用调试日志")
 	
 	// 解析参数
 	if err := flagSet.Parse(args); err != nil {
@@ -71,7 +72,7 @@ func runBackup(args []string) error {
 	}
 
 	// 创建日志记录器
-	log, err := logger.NewLogger(cfg.TargetDir)
+	log, err := logger.NewLogger(cfg.TargetDir, *debugMode)
 	if err != nil {
 		return fmt.Errorf("创建日志记录器失败: %w", err)
 	}
@@ -87,7 +88,7 @@ func runBackup(args []string) error {
 	fsService := filesystem.NewService()
 
 	// 创建压缩服务
-	compressionSvc := compression.NewService(fsService, sevenZip)
+	compressionSvc := compression.NewService(fsService, sevenZip, log)
 
 	// 创建备份协调器
 	backupCoord := coordinator.NewBackupCoordinator(cfg, compressionSvc, log)
@@ -111,6 +112,7 @@ func runRestore(args []string) error {
 	// 创建restore子命令的flag set
 	flagSet := flag.NewFlagSet("restore", flag.ExitOnError)
 	configPath := flagSet.String("config", "config.yaml", "配置文件路径")
+	debugMode := flagSet.Bool("debug", false, "启用调试日志")
 	timestamp := flagSet.String("timestamp", "", "恢复指定时间戳的备份")
 	fromTime := flagSet.String("from", "", "恢复时间戳范围的起始时间")
 	toTime := flagSet.String("to", "", "恢复时间戳范围的结束时间")
@@ -133,7 +135,7 @@ func runRestore(args []string) error {
 	}
 
 	// 创建日志记录器
-	log, err := logger.NewLogger(cfg.TargetDir)
+	log, err := logger.NewLogger(cfg.TargetDir, *debugMode)
 	if err != nil {
 		return fmt.Errorf("创建日志记录器失败: %w", err)
 	}
@@ -190,16 +192,20 @@ func printHelp() {
 	fmt.Println()
 	fmt.Println("备份选项:")
 	fmt.Println("  --config <路径>     配置文件路径 (默认: config.yaml)")
+	fmt.Println("  --debug             启用调试日志")
 	fmt.Println()
 	fmt.Println("恢复选项:")
 	fmt.Println("  --config <路径>     配置文件路径 (默认: config.yaml)")
+	fmt.Println("  --debug             启用调试日志")
 	fmt.Println("  --timestamp <时间戳> 恢复指定时间戳的备份")
 	fmt.Println("  --from <时间戳>     恢复时间戳范围的起始时间")
 	fmt.Println("  --to <时间戳>       恢复时间戳范围的结束时间")
 	fmt.Println()
 	fmt.Println("示例:")
 	fmt.Println("  zbak backup --config /path/to/config.yaml")
+	fmt.Println("  zbak backup --config /path/to/config.yaml --debug")
 	fmt.Println("  zbak restore --config /path/to/config.yaml")
+	fmt.Println("  zbak restore --config /path/to/config.yaml --debug")
 	fmt.Println("  zbak restore --config /path/to/config.yaml --timestamp 2024-01-15-10-30-00")
 	fmt.Println("  zbak restore --config /path/to/config.yaml --from 2024-01-15-10-30-00 --to 2024-01-16-14-20-00")
 }

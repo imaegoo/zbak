@@ -10,6 +10,11 @@ import (
 	"testing"
 )
 
+// mockLogger is a mock implementation of Logger for testing
+type mockLogger struct{}
+
+func (m *mockLogger) Debug(msg string, args ...interface{}) {}
+
 // mockFileSystemService is a mock implementation of FileSystemService for testing
 type mockFileSystemService struct {
 	calculateDirSizeFunc func(path string) (int64, error)
@@ -104,7 +109,7 @@ func TestDetermineStrategy_SmallDirectory(t *testing.T) {
 				},
 			}
 
-			service := NewService(mockFS, &mockSevenZipWrapper{})
+			service := NewService(mockFS, &mockSevenZipWrapper{}, &mockLogger{})
 			strategy, err := service.DetermineStrategy("/test/path", tt.volumeSize)
 
 			if (err != nil) != tt.wantErr {
@@ -161,7 +166,7 @@ func TestDetermineStrategy_LargeDirectoryNoSubdirs(t *testing.T) {
 				},
 			}
 
-			service := NewService(mockFS, &mockSevenZipWrapper{})
+			service := NewService(mockFS, &mockSevenZipWrapper{}, &mockLogger{})
 			strategy, err := service.DetermineStrategy("/test/path", tt.volumeSize)
 
 			if (err != nil) != tt.wantErr {
@@ -218,7 +223,7 @@ func TestDetermineStrategy_LargeDirectoryWithSubdirs(t *testing.T) {
 				},
 			}
 
-			service := NewService(mockFS, &mockSevenZipWrapper{})
+			service := NewService(mockFS, &mockSevenZipWrapper{}, &mockLogger{})
 			strategy, err := service.DetermineStrategy("/test/path", tt.volumeSize)
 
 			if (err != nil) != tt.wantErr {
@@ -278,7 +283,7 @@ func TestDetermineStrategy_ErrorHandling(t *testing.T) {
 				},
 			}
 
-			service := NewService(mockFS, &mockSevenZipWrapper{})
+			service := NewService(mockFS, &mockSevenZipWrapper{}, &mockLogger{})
 			_, err := service.DetermineStrategy("/test/path", tt.volumeSize)
 
 			if tt.expectError {
@@ -321,7 +326,7 @@ func TestCompressionStrategy_String(t *testing.T) {
 func TestNewService(t *testing.T) {
 	mockFS := &mockFileSystemService{}
 	mockZip := &mockSevenZipWrapper{}
-	service := NewService(mockFS, mockZip)
+	service := NewService(mockFS, mockZip, &mockLogger{})
 
 	if service == nil {
 		t.Error("NewService() returned nil")
@@ -360,7 +365,7 @@ func TestCompressDirectory_SmallDir(t *testing.T) {
 
 	mockZip := &mockSevenZipWrapper{}
 
-	service := NewService(mockFS, mockZip)
+	service := NewService(mockFS, mockZip, &mockLogger{})
 
 	task := CompressionTask{
 		SourcePath: "/source/dir",
@@ -402,7 +407,7 @@ func TestCompressDirectory_LargeNoSubdir(t *testing.T) {
 
 	mockZip := &mockSevenZipWrapper{}
 
-	service := NewService(mockFS, mockZip)
+	service := NewService(mockFS, mockZip, &mockLogger{})
 
 	task := CompressionTask{
 		SourcePath: "/source/dir",
@@ -441,7 +446,7 @@ func TestCompressDirectory_CreateDirError(t *testing.T) {
 
 	mockZip := &mockSevenZipWrapper{}
 
-	service := NewService(mockFS, mockZip)
+	service := NewService(mockFS, mockZip, &mockLogger{})
 
 	task := CompressionTask{
 		SourcePath: "/source/dir",
@@ -475,7 +480,7 @@ func TestCompressDirectory_CompressError(t *testing.T) {
 		},
 	}
 
-	service := NewService(mockFS, mockZip)
+	service := NewService(mockFS, mockZip, &mockLogger{})
 
 	task := CompressionTask{
 		SourcePath: "/source/dir",
@@ -500,7 +505,7 @@ func TestCompressDirectory_UnknownStrategy(t *testing.T) {
 
 	mockZip := &mockSevenZipWrapper{}
 
-	service := NewService(mockFS, mockZip)
+	service := NewService(mockFS, mockZip, &mockLogger{})
 
 	task := CompressionTask{
 		SourcePath: "/source/dir",
@@ -544,7 +549,7 @@ func TestCompressDirectory_OutputFilenameHandling(t *testing.T) {
 
 			mockZip := &mockSevenZipWrapper{}
 
-			service := NewService(mockFS, mockZip)
+			service := NewService(mockFS, mockZip, &mockLogger{})
 
 			task := CompressionTask{
 				SourcePath: "/source/dir",
@@ -583,7 +588,7 @@ func TestCompressDirectory_PasswordPropagation(t *testing.T) {
 
 			mockZip := &mockSevenZipWrapper{}
 
-			service := NewService(mockFS, mockZip)
+			service := NewService(mockFS, mockZip, &mockLogger{})
 
 			task := CompressionTask{
 				SourcePath: "/source/dir",
@@ -646,7 +651,7 @@ func TestCompressDirectory_VolumeSizeHandling(t *testing.T) {
 
 			mockZip := &mockSevenZipWrapper{}
 
-			service := NewService(mockFS, mockZip)
+			service := NewService(mockFS, mockZip, &mockLogger{})
 
 			task := CompressionTask{
 				SourcePath: "/source/dir",
@@ -703,7 +708,7 @@ func TestCompressDirectory_LargeWithSubdir_OnlyFiles(t *testing.T) {
 
 	mockZip := &mockSevenZipWrapper{}
 
-	service := NewService(mockFS, mockZip)
+	service := NewService(mockFS, mockZip, &mockLogger{})
 
 	task := CompressionTask{
 		SourcePath: sourceDir,
@@ -776,7 +781,7 @@ func TestCompressDirectory_LargeWithSubdir_OnlySubdirs(t *testing.T) {
 
 	mockZip := &mockSevenZipWrapper{}
 
-	service := NewService(mockFS, mockZip)
+	service := NewService(mockFS, mockZip, &mockLogger{})
 
 	task := CompressionTask{
 		SourcePath: sourceDir,
@@ -833,7 +838,7 @@ func TestCompressDirectory_LargeWithSubdir_MixedContent(t *testing.T) {
 
 	mockZip := &mockSevenZipWrapper{}
 
-	service := NewService(mockFS, mockZip)
+	service := NewService(mockFS, mockZip, &mockLogger{})
 
 	task := CompressionTask{
 		SourcePath: sourceDir,
@@ -882,7 +887,7 @@ func TestCompressDirectory_LargeWithSubdir_EmptyDirectory(t *testing.T) {
 
 	mockZip := &mockSevenZipWrapper{}
 
-	service := NewService(mockFS, mockZip)
+	service := NewService(mockFS, mockZip, &mockLogger{})
 
 	task := CompressionTask{
 		SourcePath: sourceDir,
@@ -912,7 +917,7 @@ func TestCompressDirectory_LargeWithSubdir_ReadDirError(t *testing.T) {
 
 	mockZip := &mockSevenZipWrapper{}
 
-	service := NewService(mockFS, mockZip)
+	service := NewService(mockFS, mockZip, &mockLogger{})
 
 	// Use non-existent directory to trigger ReadDir error
 	task := CompressionTask{
@@ -958,7 +963,7 @@ func TestCompressDirectory_LargeWithSubdir_CompressFilesError(t *testing.T) {
 		},
 	}
 
-	service := NewService(mockFS, mockZip)
+	service := NewService(mockFS, mockZip, &mockLogger{})
 
 	task := CompressionTask{
 		SourcePath: sourceDir,
@@ -1007,7 +1012,7 @@ func TestCompressDirectory_LargeWithSubdir_DetermineStrategyError(t *testing.T) 
 
 	mockZip := &mockSevenZipWrapper{}
 
-	service := NewService(mockFS, mockZip)
+	service := NewService(mockFS, mockZip, &mockLogger{})
 
 	task := CompressionTask{
 		SourcePath: sourceDir,
@@ -1065,7 +1070,7 @@ func TestCompressDirectory_LargeWithSubdir_RecursiveCompressionError(t *testing.
 		},
 	}
 
-	service := NewService(mockFS, mockZip)
+	service := NewService(mockFS, mockZip, &mockLogger{})
 
 	task := CompressionTask{
 		SourcePath: sourceDir,
@@ -1123,7 +1128,7 @@ func TestCompressDirectory_LargeWithSubdir_TargetPathHandling(t *testing.T) {
 
 			mockZip := &mockSevenZipWrapper{}
 
-			service := NewService(mockFS, mockZip)
+			service := NewService(mockFS, mockZip, &mockLogger{})
 
 			// Use temp directory for target path
 			targetPath := tt.targetPath
@@ -1162,7 +1167,7 @@ func TestCompressDirectory_LargeWithSubdir_TargetPathHandling(t *testing.T) {
 func TestNewWorkerPool(t *testing.T) {
 	mockFS := &mockFileSystemService{}
 	mockZip := &mockSevenZipWrapper{}
-	service := NewService(mockFS, mockZip)
+	service := NewService(mockFS, mockZip, &mockLogger{})
 
 	tests := []struct {
 		name            string
@@ -1233,7 +1238,7 @@ func TestWorkerPool_SerialExecution(t *testing.T) {
 	}
 
 	mockZip := &mockSevenZipWrapper{}
-	service := NewService(mockFS, mockZip)
+	service := NewService(mockFS, mockZip, &mockLogger{})
 
 	pool := NewWorkerPool(service, 1)
 	ctx := context.Background()
@@ -1292,7 +1297,7 @@ func TestWorkerPool_ParallelExecution(t *testing.T) {
 	}
 
 	mockZip := &mockSevenZipWrapper{}
-	service := NewService(mockFS, mockZip)
+	service := NewService(mockFS, mockZip, &mockLogger{})
 
 	pool := NewWorkerPool(service, 4)
 	ctx := context.Background()
@@ -1345,7 +1350,7 @@ func TestWorkerPool_ErrorCollection(t *testing.T) {
 		},
 	}
 
-	service := NewService(mockFS, mockZip)
+	service := NewService(mockFS, mockZip, &mockLogger{})
 	pool := NewWorkerPool(service, 2)
 	ctx := context.Background()
 	pool.Start(ctx)
@@ -1427,7 +1432,7 @@ func TestWorkerPool_WaitForCompletion(t *testing.T) {
 	}
 
 	mockZip := &mockSevenZipWrapper{}
-	service := NewService(mockFS, mockZip)
+	service := NewService(mockFS, mockZip, &mockLogger{})
 
 	pool := NewWorkerPool(service, 2)
 	ctx := context.Background()
@@ -1469,7 +1474,7 @@ func TestWorkerPool_ContextCancellation(t *testing.T) {
 	}
 
 	mockZip := &mockSevenZipWrapper{}
-	service := NewService(mockFS, mockZip)
+	service := NewService(mockFS, mockZip, &mockLogger{})
 
 	pool := NewWorkerPool(service, 2)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1506,7 +1511,7 @@ func TestWorkerPool_EmptyQueue(t *testing.T) {
 
 	mockFS := &mockFileSystemService{}
 	mockZip := &mockSevenZipWrapper{}
-	service := NewService(mockFS, mockZip)
+	service := NewService(mockFS, mockZip, &mockLogger{})
 
 	pool := NewWorkerPool(service, 2)
 	ctx := context.Background()
@@ -1542,7 +1547,7 @@ func TestWorkerPool_MultipleErrors(t *testing.T) {
 		},
 	}
 
-	service := NewService(mockFS, mockZip)
+	service := NewService(mockFS, mockZip, &mockLogger{})
 	pool := NewWorkerPool(service, 3)
 	ctx := context.Background()
 	pool.Start(ctx)

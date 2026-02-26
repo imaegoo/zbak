@@ -21,6 +21,7 @@ import (
 // mockLogger is a simple logger for testing
 type mockLogger struct{}
 
+func (m *mockLogger) Debug(msg string, args ...interface{}) {}
 func (m *mockLogger) Info(msg string, args ...interface{})  {}
 func (m *mockLogger) Warn(msg string, args ...interface{})  {}
 func (m *mockLogger) Error(msg string, args ...interface{}) {}
@@ -61,7 +62,7 @@ func TestNewBackupCoordinator(t *testing.T) {
 	fs := filesystem.NewService()
 	sz := sevenzip.NewWrapper()
 	szAdapter := newSevenZipAdapter(sz)
-	compressionSvc := compression.NewService(fs, szAdapter)
+	compressionSvc := compression.NewService(fs, szAdapter, log)
 	log := &mockLogger{}
 
 	bc := NewBackupCoordinator(cfg, compressionSvc, log)
@@ -139,7 +140,7 @@ func TestBackupCoordinator_Execute_NoChanges(t *testing.T) {
 	}
 
 	// Create logger
-	log, err := logger.NewLogger(targetDir)
+	log, err := logger.NewLogger(targetDir, false)
 	if err != nil {
 		t.Fatalf("Failed to create logger: %v", err)
 	}
@@ -157,7 +158,7 @@ func TestBackupCoordinator_Execute_NoChanges(t *testing.T) {
 	fs := filesystem.NewService()
 	sz := sevenzip.NewWrapper()
 	szAdapter := newSevenZipAdapter(sz)
-	compressionSvc := compression.NewService(fs, szAdapter)
+	compressionSvc := compression.NewService(fs, szAdapter, log)
 	bc := NewBackupCoordinator(cfg, compressionSvc, log)
 
 	// Execute backup
@@ -220,7 +221,7 @@ func TestBackupCoordinator_Execute_NewFiles(t *testing.T) {
 	}
 
 	// Create logger
-	log, err := logger.NewLogger(targetDir)
+	log, err := logger.NewLogger(targetDir, false)
 	if err != nil {
 		t.Fatalf("Failed to create logger: %v", err)
 	}
@@ -237,7 +238,7 @@ func TestBackupCoordinator_Execute_NewFiles(t *testing.T) {
 	// Create coordinator
 	fs := filesystem.NewService()
 	szAdapter := newSevenZipAdapter(sz)
-	compressionSvc := compression.NewService(fs, szAdapter)
+	compressionSvc := compression.NewService(fs, szAdapter, log)
 	bc := NewBackupCoordinator(cfg, compressionSvc, log)
 
 	// Execute backup
@@ -347,7 +348,7 @@ func TestBackupCoordinator_Execute_ModifiedFiles(t *testing.T) {
 	}
 
 	// Create logger
-	log, err := logger.NewLogger(targetDir)
+	log, err := logger.NewLogger(targetDir, false)
 	if err != nil {
 		t.Fatalf("Failed to create logger: %v", err)
 	}
@@ -364,7 +365,7 @@ func TestBackupCoordinator_Execute_ModifiedFiles(t *testing.T) {
 	// Create coordinator
 	fs := filesystem.NewService()
 	szAdapter := newSevenZipAdapter(sz)
-	compressionSvc := compression.NewService(fs, szAdapter)
+	compressionSvc := compression.NewService(fs, szAdapter, log)
 	bc := NewBackupCoordinator(cfg, compressionSvc, log)
 
 	// Execute backup
@@ -422,7 +423,7 @@ func TestBackupCoordinator_Execute_DeletedFiles(t *testing.T) {
 	}
 
 	// Create logger
-	log, err := logger.NewLogger(targetDir)
+	log, err := logger.NewLogger(targetDir, false)
 	if err != nil {
 		t.Fatalf("Failed to create logger: %v", err)
 	}
@@ -440,7 +441,7 @@ func TestBackupCoordinator_Execute_DeletedFiles(t *testing.T) {
 	fs := filesystem.NewService()
 	sz := sevenzip.NewWrapper()
 	szAdapter := newSevenZipAdapter(sz)
-	compressionSvc := compression.NewService(fs, szAdapter)
+	compressionSvc := compression.NewService(fs, szAdapter, log)
 	bc := NewBackupCoordinator(cfg, compressionSvc, log)
 
 	// Execute backup
@@ -522,7 +523,7 @@ func TestBackupCoordinator_BuildCompressionTasks(t *testing.T) {
 	fs := filesystem.NewService()
 	sz := sevenzip.NewWrapper()
 	szAdapter := newSevenZipAdapter(sz)
-	compressionSvc := compression.NewService(fs, szAdapter)
+	compressionSvc := compression.NewService(fs, szAdapter, log)
 	log := &mockLogger{}
 	bc := NewBackupCoordinator(cfg, compressionSvc, log)
 
@@ -607,7 +608,7 @@ func TestBackupCoordinator_Execute_CompressionError(t *testing.T) {
 	}
 
 	// Create logger
-	log, err := logger.NewLogger(targetDir)
+	log, err := logger.NewLogger(targetDir, false)
 	if err != nil {
 		t.Fatalf("Failed to create logger: %v", err)
 	}
@@ -625,7 +626,7 @@ func TestBackupCoordinator_Execute_CompressionError(t *testing.T) {
 	// Create coordinator
 	fs := filesystem.NewService()
 	szAdapter := newSevenZipAdapter(sz)
-	compressionSvc := compression.NewService(fs, szAdapter)
+	compressionSvc := compression.NewService(fs, szAdapter, log)
 	bc := NewBackupCoordinator(cfg, compressionSvc, log)
 
 	// Execute backup
@@ -700,7 +701,7 @@ func TestBackupCoordinator_Execute_ConcurrentBackup(t *testing.T) {
 	}
 
 	// Create logger
-	log, err := logger.NewLogger(targetDir)
+	log, err := logger.NewLogger(targetDir, false)
 	if err != nil {
 		t.Fatalf("Failed to create logger: %v", err)
 	}
@@ -717,7 +718,7 @@ func TestBackupCoordinator_Execute_ConcurrentBackup(t *testing.T) {
 	// Create coordinator
 	fs := filesystem.NewService()
 	szAdapter := newSevenZipAdapter(sz)
-	compressionSvc := compression.NewService(fs, szAdapter)
+	compressionSvc := compression.NewService(fs, szAdapter, log)
 	bc := NewBackupCoordinator(cfg, compressionSvc, log)
 
 	// Execute backup

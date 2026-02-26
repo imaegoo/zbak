@@ -140,7 +140,7 @@ func TestCPUUtilization(t *testing.T) {
 	}
 
 	// 创建日志记录器
-	log, err := logger.NewLogger(targetDir)
+	log, err := logger.NewLogger(targetDir, false)
 	if err != nil {
 		t.Fatalf("创建日志记录器失败: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestCPUUtilization(t *testing.T) {
 
 	// 创建压缩服务
 	fsSvc := filesystem.NewService()
-	compressionSvc := compression.NewService(fsSvc, wrapper)
+	compressionSvc := compression.NewService(fsSvc, wrapper, log)
 
 	// 创建备份协调器
 	bc := coordinator.NewBackupCoordinator(cfg, compressionSvc, log)
@@ -323,7 +323,7 @@ func TestLoggerBufferedWriting(t *testing.T) {
 	tempDir := t.TempDir()
 
 	// 创建日志记录器
-	log, err := logger.NewLogger(tempDir)
+	log, err := logger.NewLogger(tempDir, false)
 	if err != nil {
 		t.Fatalf("创建日志记录器失败: %v", err)
 	}

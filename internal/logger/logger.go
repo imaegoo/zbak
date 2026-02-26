@@ -11,6 +11,7 @@ import (
 
 // Logger 日志记录器接口
 type Logger interface {
+	Debug(msg string, args ...interface{})
 	Info(msg string, args ...interface{})
 	Warn(msg string, args ...interface{})
 	Error(msg string, args ...interface{})
@@ -20,16 +21,19 @@ type Logger interface {
 
 // logger 日志记录器实现
 type logger struct {
+	debugLogger *log.Logger
 	infoLogger  *log.Logger
 	warnLogger  *log.Logger
 	errorLogger *log.Logger
 	writer      io.Writer
 	logFile     *os.File
+	debugMode   bool
 }
 
 // NewLogger 创建新的日志记录器
 // targetDir: 目标目录，用于创建日志文件
-func NewLogger(targetDir string) (Logger, error) {
+// debugMode: 是否启用调试模式
+func NewLogger(targetDir string, debugMode bool) (Logger, error) {
 	// 创建日志文件名：backup-YYYY-MM-DD-HH-MM-SS.log
 	timestamp := time.Now().Format("2006-01-02-15-04-05")
 	logFileName := fmt.Sprintf("backup-%s.log", timestamp)
@@ -50,14 +54,28 @@ func NewLogger(targetDir string) (Logger, error) {
 	multiWriter := io.MultiWriter(os.Stdout, logFile)
 
 	l := &logger{
+		debugLogger: log.New(multiWriter, "[DEBUG] ", log.LstdFlags),
 		infoLogger:  log.New(multiWriter, "[INFO] ", log.LstdFlags),
 		warnLogger:  log.New(multiWriter, "[WARN] ", log.LstdFlags),
 		errorLogger: log.New(multiWriter, "[ERROR] ", log.LstdFlags),
 		writer:      multiWriter,
 		logFile:     logFile,
+		debugMode:   debugMode,
 	}
 
 	return l, nil
+}
+
+// Debug 记录调试日志（仅在调试模式下输出）
+func (l *logger) Debug(msg string, args ...interface{}) {
+	if !l.debugMode {
+		return
+	}
+	if len(args) > 0 {
+		l.debugLogger.Printf(msg, args...)
+	} else {
+		l.debugLogger.Println(msg)
+	}
 }
 
 // Info 记录信息日志
