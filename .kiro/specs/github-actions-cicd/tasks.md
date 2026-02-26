@@ -27,7 +27,7 @@
   - 添加上传 Release Assets 步骤
   - _Requirements: 2.1, 2.2, 2.3, 2.4, 2.5, 2.6, 2.7, 2.8, 2.9, 2.10, 2.11, 2.12, 2.13, 6.2, 7.3, 7.6_
 
-- [~] 3. 创建 Docker 工作流配置文件
+- [x] 3. 创建 Docker 工作流配置文件
   - 创建 `.github/workflows/docker.yml` 文件
   - 配置触发条件：release published 事件
   - 添加 QEMU 和 Docker Buildx 设置步骤
