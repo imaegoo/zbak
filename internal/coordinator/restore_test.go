@@ -236,7 +236,7 @@ func TestDiscoverArchives(t *testing.T) {
 		{"dir2/subdir1/archive3.7z.001"},
 		{"dir2/subdir1/archive3.7z.002"},
 		// 另一个单文件压缩
-		{"dir3/files.7z.001"},
+		{"dir3/zbaksubfiles.7z.001"},
 	}
 
 	for _, file := range testFiles {
@@ -259,7 +259,7 @@ func TestDiscoverArchives(t *testing.T) {
 	}
 
 	// 验证发现的压缩文件数量
-	expectedCount := 4 // archive1, archive2, archive3, files
+	expectedCount := 4 // archive1, archive2, archive3, zbaksubfiles
 	if len(archives) != expectedCount {
 		t.Errorf("期望发现 %d 个压缩文件，实际发现 %d 个", expectedCount, len(archives))
 	}
@@ -306,13 +306,13 @@ func TestDiscoverArchives(t *testing.T) {
 		t.Errorf("未找到 archive3")
 	}
 
-	// 验证 files
-	if archive, exists := archiveMap["files"]; exists {
+	// 验证 zbaksubfiles
+	if archive, exists := archiveMap["zbaksubfiles"]; exists {
 		if len(archive.AllVolumes) != 1 {
-			t.Errorf("files 期望 1 个分卷，实际 %d 个", len(archive.AllVolumes))
+			t.Errorf("zbaksubfiles 期望 1 个分卷，实际 %d 个", len(archive.AllVolumes))
 		}
 	} else {
-		t.Errorf("未找到 files")
+		t.Errorf("未找到 zbaksubfiles")
 	}
 }
 
@@ -329,7 +329,7 @@ func TestExtractBaseName(t *testing.T) {
 		{"多分卷文件", "archive.7z.002", "archive"},
 		{"带路径的文件", "dir/archive.7z.001", "dir/archive"}, // 函数会正确提取基础名称
 		{"复杂名称", "my-backup-2024.7z.001", "my-backup-2024"},
-		{"files压缩", "files.7z.001", "files"},
+		{"zbaksubfiles压缩", "zbaksubfiles.7z.001", "zbaksubfiles"},
 		{"大分卷号", "archive.7z.100", "archive"},
 	}
 

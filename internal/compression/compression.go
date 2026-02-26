@@ -261,8 +261,9 @@ func (s *Service) compressLargeWithSubdir(ctx context.Context, task CompressionT
 		}
 	}
 
-	// Compress non-directory files as "files.7z.001" AFTER subdirectories
+	// Compress non-directory files as "zbaksubfiles.7z.001" AFTER subdirectories
 	// These files are placed in the same directory level as subdirectories
+	// Using "zbaksubfiles" instead of "files" to avoid conflicts with subdirectories named "files"
 	if len(files) > 0 {
 		// Ensure the target directory exists for files
 		targetDir := task.TargetPath
@@ -270,7 +271,7 @@ func (s *Service) compressLargeWithSubdir(ctx context.Context, task CompressionT
 			targetDir = filepath.Dir(task.TargetPath)
 		}
 		
-		filesOutput := filepath.Join(targetDir, "files.7z.001")
+		filesOutput := filepath.Join(targetDir, "zbaksubfiles.7z.001")
 		params := CompressParams{
 			Sources:    files,
 			Output:     filesOutput,
