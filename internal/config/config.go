@@ -19,6 +19,7 @@ type Config struct {
 // ConfigManager 配置管理器接口
 type ConfigManager interface {
 	Load(path string) (*Config, error)
+	Save(path string, config *Config) error
 	Validate(config *Config) error
 }
 
@@ -69,5 +70,23 @@ func (cm *configManager) Validate(config *Config) error {
 	if config.Concurrency < 1 {
 		return ErrMissingRequiredField("concurrency")
 	}
+	return nil
+}
+
+// Save 保存配置到YAML文件
+func (cm *configManager) Save(path string, config *Config) error {
+	if err := cm.Validate(config); err != nil {
+		return err
+	}
+
+	data, err := yaml.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("序列化配置失败: %w", err)
+	}
+
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		return fmt.Errorf("写入配置文件失败: %w", err)
+	}
+
 	return nil
 }

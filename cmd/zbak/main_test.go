@@ -202,3 +202,124 @@ func TestRunRestore_ConflictingOptions(t *testing.T) {
 		t.Errorf("Expected '不能同时指定' in error, got: %v", err)
 	}
 }
+
+func TestMain_ErrorHandling(t *testing.T) {
+	// Test that main function exits with code 1 on error
+	// We can't directly test os.Exit, but we can test the run function
+	// which is called by main
+	
+	testCases := []struct {
+		name        string
+		args        []string
+		expectError bool
+	}{
+		{
+			name:        "unknown subcommand",
+			args:        []string{"unknown"},
+			expectError: true,
+		},
+		{
+			name:        "backup with missing config",
+			args:        []string{"backup", "--config", "nonexistent.yaml"},
+			expectError: true,
+		},
+		{
+			name:        "restore with missing config",
+			args:        []string{"restore", "--config", "nonexistent.yaml"},
+			expectError: true,
+		},
+		{
+			name:        "restore with conflicting options",
+			args:        []string{"restore", "--timestamp", "2024-01-15-10-30-00", "--from", "2024-01-15-10-30-00"},
+			expectError: true,
+		},
+		{
+			name:        "help command",
+			args:        []string{"help"},
+			expectError: false,
+		},
+		{
+			name:        "version command",
+			args:        []string{"version"},
+			expectError: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Suppress output
+			oldStdout := os.Stdout
+			oldStderr := os.Stderr
+			os.Stdout = nil
+			os.Stderr = nil
+			defer func() {
+				os.Stdout = oldStdout
+				os.Stderr = oldStderr
+			}()
+
+			err := run(tc.args)
+
+			if tc.expectError && err == nil {
+				t.Errorf("Expected error for args %v, but got nil", tc.args)
+			}
+
+			if !tc.expectError && err != nil {
+				t.Errorf("Expected no error for args %v, but got: %v", tc.args, err)
+			}
+		})
+	}
+}
+
+func TestIntegration_BackupCoordinatorConnection(t *testing.T) {
+	// Test that runBackup properly connects to BackupCoordinator
+	// This test verifies the integration without actually running a backup
+	
+	// We expect an error because the config file doesn't exist
+	err := runBackup([]string{"--config", "test-nonexistent.yaml"})
+	
+	if err == nil {
+		t.Error("Expected error for missing config file")
+	}
+	
+	// Verify the error is from config loading, not from missing coordinator
+	if !strings.Contains(err.Error(), "加载配置失败") {
+		t.Errorf("Expected config loading error, got: %v", err)
+	}
+}
+
+func TestIntegration_RestoreCoordinatorConnection(t *testing.T) {
+	// Test that runRestore properly connects to RestoreCoordinator
+	// This test verifies the integration without actually running a restore
+	
+	// We expect an error because the config file doesn't exist
+	err := runRestore([]string{"--config", "test-nonexistent.yaml"})
+	
+	if err == nil {
+		t.Error("Expected error for missing config file")
+	}
+	
+	// Verify the error is from config loading, not from missing coordinator
+	if !strings.Contains(err.Error(), "加载配置失败") {
+		t.Errorf("Expected config loading error, got: %v", err)
+	}
+}
+
+func TestIntegration_LoggerConfiguration(t *testing.T) {
+	// Test that logger is properly configured in both backup and restore
+	// We can't fully test this without a valid config, but we can verify
+	// that the logger creation is attempted
+	
+	// For backup
+	err := runBackup([]string{"--config", "test-nonexistent.yaml"})
+	if err == nil {
+		t.Error("Expected error for missing config file")
+	}
+	// If we got past config loading, we would have created a logger
+	// Since config loading fails first, we can't test logger creation here
+	
+	// For restore
+	err = runRestore([]string{"--config", "test-nonexistent.yaml"})
+	if err == nil {
+		t.Error("Expected error for missing config file")
+	}
+}

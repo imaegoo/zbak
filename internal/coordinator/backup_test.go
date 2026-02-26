@@ -25,6 +25,7 @@ func (m *mockLogger) Info(msg string, args ...interface{})  {}
 func (m *mockLogger) Warn(msg string, args ...interface{})  {}
 func (m *mockLogger) Error(msg string, args ...interface{}) {}
 func (m *mockLogger) SetOutput(w io.Writer)                 {}
+func (m *mockLogger) Close() error                          { return nil }
 
 // Ensure mockLogger implements logger.Logger interface at compile time
 var _ logger.Logger = (*mockLogger)(nil)

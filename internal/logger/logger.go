@@ -15,6 +15,7 @@ type Logger interface {
 	Warn(msg string, args ...interface{})
 	Error(msg string, args ...interface{})
 	SetOutput(w io.Writer)
+	Close() error
 }
 
 // logger 日志记录器实现
@@ -23,6 +24,7 @@ type logger struct {
 	warnLogger  *log.Logger
 	errorLogger *log.Logger
 	writer      io.Writer
+	logFile     *os.File
 }
 
 // NewLogger 创建新的日志记录器
@@ -52,6 +54,7 @@ func NewLogger(targetDir string) (Logger, error) {
 		warnLogger:  log.New(multiWriter, "[WARN] ", log.LstdFlags),
 		errorLogger: log.New(multiWriter, "[ERROR] ", log.LstdFlags),
 		writer:      multiWriter,
+		logFile:     logFile,
 	}
 
 	return l, nil
@@ -90,4 +93,12 @@ func (l *logger) SetOutput(w io.Writer) {
 	l.infoLogger.SetOutput(w)
 	l.warnLogger.SetOutput(w)
 	l.errorLogger.SetOutput(w)
+}
+
+// Close 关闭日志文件
+func (l *logger) Close() error {
+	if l.logFile != nil {
+		return l.logFile.Close()
+	}
+	return nil
 }

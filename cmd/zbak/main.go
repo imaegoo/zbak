@@ -75,6 +75,7 @@ func runBackup(args []string) error {
 	if err != nil {
 		return fmt.Errorf("创建日志记录器失败: %w", err)
 	}
+	defer log.Close()
 
 	// 检测7zip工具
 	sevenZip := sevenzip.NewWrapper()
@@ -136,6 +137,7 @@ func runRestore(args []string) error {
 	if err != nil {
 		return fmt.Errorf("创建日志记录器失败: %w", err)
 	}
+	defer log.Close()
 
 	// 检测7zip工具
 	sevenZip := sevenzip.NewWrapper()
