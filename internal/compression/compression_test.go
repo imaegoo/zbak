@@ -849,20 +849,20 @@ func TestCompressDirectory_LargeWithSubdir_MixedContent(t *testing.T) {
 	}
 
 	// Verify compress was called twice:
-	// 1. For root files (files.7z.001)
-	// 2. For subdirectory
+	// 1. For subdirectory (processed first)
+	// 2. For root files (files.7z.001)
 	if len(mockZip.compressCalls) != 2 {
 		t.Errorf("Expected 2 compress calls, got %d", len(mockZip.compressCalls))
 	}
 
-	// First call should be for files.7z.001
-	if !strings.HasSuffix(mockZip.compressCalls[0].Output, "files.7z.001") {
-		t.Errorf("Expected first call to be for files.7z.001, got %s", mockZip.compressCalls[0].Output)
+	// First call should be for subdirectory (subdirs are processed first)
+	if !strings.Contains(mockZip.compressCalls[0].Output, "subdir") {
+		t.Errorf("Expected first call to be for subdir, got %s", mockZip.compressCalls[0].Output)
 	}
 
-	// Second call should be for subdirectory
-	if !strings.Contains(mockZip.compressCalls[1].Output, "subdir") {
-		t.Errorf("Expected second call to be for subdir, got %s", mockZip.compressCalls[1].Output)
+	// Second call should be for files.7z.001
+	if !strings.HasSuffix(mockZip.compressCalls[1].Output, "files.7z.001") {
+		t.Errorf("Expected second call to be for files.7z.001, got %s", mockZip.compressCalls[1].Output)
 	}
 }
 

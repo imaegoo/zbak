@@ -53,6 +53,9 @@ func (d *Detector) Detect(sourceDir string, fileIndex *index.FileIndex) (*Change
 			return fmt.Errorf("计算相对路径失败: %w", err)
 		}
 
+		// Normalize path to use forward slashes for consistency
+		relPath = filepath.ToSlash(relPath)
+
 		// 标记文件存在
 		sourceFiles[relPath] = true
 
@@ -94,7 +97,7 @@ func (d *Detector) Detect(sourceDir string, fileIndex *index.FileIndex) (*Change
 			continue
 		}
 
-		// 如果文件不在源目录中，标记为删除
+		// If文件不在源目录中，标记为删除
 		if !sourceFiles[relPath] {
 			changeSet.DeletedFiles = append(changeSet.DeletedFiles, relPath)
 		}

@@ -326,10 +326,10 @@ func TestDetector_Detect_NestedDirectories(t *testing.T) {
 		t.Errorf("期望2个新文件，实际得到%d个", len(changeSet.NewFiles))
 	}
 
-	// 验证文件路径使用正确的分隔符
+	// 验证文件路径使用正确的分隔符 - use forward slashes for consistency
 	expectedFiles := map[string]bool{
-		"test1.txt":                true,
-		filepath.Join("subdir", "test2.txt"): true,
+		"test1.txt":        true,
+		"subdir/test2.txt": true,
 	}
 	for _, file := range changeSet.NewFiles {
 		if !expectedFiles[file] {

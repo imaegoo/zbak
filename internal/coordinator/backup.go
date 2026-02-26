@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -181,8 +182,25 @@ func (bc *BackupCoordinator) buildCompressionTasks(changeSet *detector.ChangeSet
 		dirMap[dir] = append(dirMap[dir], relPath)
 	}
 
-	// Build tasks for each directory
+	// Filter out directories that are subdirectories of other directories in the map
+	// This prevents creating duplicate tasks for nested directories
+	topLevelDirs := make(map[string]bool)
 	for dir := range dirMap {
+		isTopLevel := true
+		// Check if this directory is a subdirectory of any other directory in the map
+		for otherDir := range dirMap {
+			if dir != otherDir && strings.HasPrefix(dir, otherDir+string(filepath.Separator)) {
+				isTopLevel = false
+				break
+			}
+		}
+		if isTopLevel {
+			topLevelDirs[dir] = true
+		}
+	}
+
+	// Build tasks only for top-level directories
+	for dir := range topLevelDirs {
 		// Determine the source directory path
 		var sourcePath string
 		if dir == "" {
@@ -254,7 +272,7 @@ func (bc *BackupCoordinator) updateFileIndex(changeSet *detector.ChangeSet, time
 	changedFiles := append(changeSet.NewFiles, changeSet.ModifiedFiles...)
 	for _, relPath := range changedFiles {
 		// Get file info
-		fullPath := filepath.Join(bc.config.SourceDir, relPath)
+		fullPath := filepath.Join(bc.config.SourceDir, filepath.FromSlash(relPath))
 		info, err := os.Stat(fullPath)
 		if err != nil {
 			bc.logger.Warn("无法获取文件信息: %s, 错误: %v", relPath, err)

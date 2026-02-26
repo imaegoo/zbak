@@ -139,9 +139,14 @@ func (s *Service) CompressDirectory(ctx context.Context, task CompressionTask) e
 // Requirements: 5.1, 5.2, 5.3, 5.4, 5.5
 func (s *Service) compressSmallDir(ctx context.Context, task CompressionTask) error {
 	// Generate output filename: dirname.7z.001
+	// Ensure the output always ends with .7z.001
 	outputFile := task.TargetPath
 	if !strings.HasSuffix(outputFile, ".7z.001") {
-		outputFile = outputFile + ".7z.001"
+		if strings.HasSuffix(outputFile, ".7z") {
+			outputFile = outputFile + ".001"
+		} else {
+			outputFile = outputFile + ".7z.001"
+		}
 	}
 
 	// Compress the entire directory
@@ -163,9 +168,14 @@ func (s *Service) compressSmallDir(ctx context.Context, task CompressionTask) er
 // Requirements: 6.1, 6.2, 6.3, 6.4, 6.5
 func (s *Service) compressLargeNoSubdir(ctx context.Context, task CompressionTask) error {
 	// Generate output filename: dirname.7z.001
+	// Ensure the output always ends with .7z.001
 	outputFile := task.TargetPath
 	if !strings.HasSuffix(outputFile, ".7z.001") {
-		outputFile = outputFile + ".7z.001"
+		if strings.HasSuffix(outputFile, ".7z") {
+			outputFile = outputFile + ".001"
+		} else {
+			outputFile = outputFile + ".7z.001"
+		}
 	}
 
 	// Compress with volume splitting
@@ -206,36 +216,15 @@ func (s *Service) compressLargeWithSubdir(ctx context.Context, task CompressionT
 		}
 	}
 
-	// Compress non-directory files as "files.7z.001"
-	// These files are placed in the same directory level as subdirectories
-	if len(files) > 0 {
-		// Ensure the target directory exists for files
-		targetDir := task.TargetPath
-		if !strings.HasSuffix(task.TargetPath, ".7z.001") {
-			targetDir = filepath.Dir(task.TargetPath)
-		}
-		
-		filesOutput := filepath.Join(targetDir, "files.7z.001")
-		params := CompressParams{
-			Sources:    files,
-			Output:     filesOutput,
-			Password:   task.Password,
-			VolumeSize: task.VolumeSize,
-		}
-
-		if err := s.sevenZip.Compress(params); err != nil {
-			return fmt.Errorf("failed to compress files in directory: %w", err)
-		}
-	}
-
-	// Recursively process each subdirectory
+	// Recursively process each subdirectory FIRST
+	// This ensures subdirectory archives are created before files.7z
 	// Maintain directory structure by creating subdirectory paths in target
 	for _, subdir := range subdirs {
 		subdirName := filepath.Base(subdir)
 		
 		// Preserve directory structure in target
 		targetDir := task.TargetPath
-		if strings.HasSuffix(task.TargetPath, ".7z.001") {
+		if strings.HasSuffix(task.TargetPath, ".7z.001") || strings.HasSuffix(task.TargetPath, ".7z") {
 			targetDir = filepath.Dir(task.TargetPath)
 		}
 		subdirTarget := filepath.Join(targetDir, subdirName)
@@ -258,6 +247,28 @@ func (s *Service) compressLargeWithSubdir(ctx context.Context, task CompressionT
 		// Recursively compress subdirectory
 		if err := s.CompressDirectory(ctx, subtask); err != nil {
 			return fmt.Errorf("failed to compress subdirectory %s: %w", subdirName, err)
+		}
+	}
+
+	// Compress non-directory files as "files.7z.001" AFTER subdirectories
+	// These files are placed in the same directory level as subdirectories
+	if len(files) > 0 {
+		// Ensure the target directory exists for files
+		targetDir := task.TargetPath
+		if strings.HasSuffix(task.TargetPath, ".7z.001") || strings.HasSuffix(task.TargetPath, ".7z") {
+			targetDir = filepath.Dir(task.TargetPath)
+		}
+		
+		filesOutput := filepath.Join(targetDir, "files.7z.001")
+		params := CompressParams{
+			Sources:    files,
+			Output:     filesOutput,
+			Password:   task.Password,
+			VolumeSize: task.VolumeSize,
+		}
+
+		if err := s.sevenZip.Compress(params); err != nil {
+			return fmt.Errorf("failed to compress files in directory: %w", err)
 		}
 	}
 

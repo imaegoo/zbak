@@ -138,7 +138,7 @@ func (rc *RestoreCoordinator) filterTimestamps(timestamps []string, options Rest
 }
 
 // discoverArchives 发现时间戳目录中的所有压缩文件
-// 识别.7z.001文件作为压缩包的起始文件，并关联所有分卷
+// 识别.7z.001或.7z文件作为压缩包的起始文件，并关联所有分卷
 func (rc *RestoreCoordinator) discoverArchives(timestampDir string) ([]ArchiveInfo, error) {
 	timestampPath := rc.timestampManager.GetTimestampPath(timestampDir)
 	
@@ -156,8 +156,24 @@ func (rc *RestoreCoordinator) discoverArchives(timestampDir string) ([]ArchiveIn
 			return nil
 		}
 
-		// 检查是否为7z文件
-		if !strings.HasSuffix(info.Name(), ".7z.001") && !strings.Contains(info.Name(), ".7z.") {
+		// 检查是否为7z文件 - look for .7z.001, .7z.002, etc. or .7z (without volumes)
+		var baseName string
+		var isArchive bool
+		
+		if strings.Contains(info.Name(), ".7z.") {
+			// Multi-volume archive: extract base name before .7z.XXX
+			idx := strings.Index(info.Name(), ".7z.")
+			if idx != -1 {
+				baseName = info.Name()[:idx]
+				isArchive = true
+			}
+		} else if strings.HasSuffix(info.Name(), ".7z") {
+			// Single volume archive
+			baseName = strings.TrimSuffix(info.Name(), ".7z")
+			isArchive = true
+		}
+		
+		if !isArchive {
 			return nil
 		}
 
@@ -167,13 +183,17 @@ func (rc *RestoreCoordinator) discoverArchives(timestampDir string) ([]ArchiveIn
 			return fmt.Errorf("计算相对路径失败: %w", err)
 		}
 
-		// 提取基础名称（去除.7z.XXX后缀）
-		baseName := rc.extractBaseName(info.Name())
 		baseDir := filepath.Dir(relPath)
 		fullBaseName := filepath.Join(baseDir, baseName)
 
-		// 如果是.7z.001文件，创建新的ArchiveInfo
-		if strings.HasSuffix(info.Name(), ".7z.001") {
+		// Create or update ArchiveInfo
+		if archiveInfo, exists := archiveMap[fullBaseName]; exists {
+			archiveInfo.AllVolumes = append(archiveInfo.AllVolumes, path)
+			// Update FirstVolume if this is .7z.001 or if FirstVolume is not set
+			if strings.HasSuffix(info.Name(), ".7z.001") || archiveInfo.FirstVolume == "" {
+				archiveInfo.FirstVolume = path
+			}
+		} else {
 			archiveInfo := &ArchiveInfo{
 				BaseName:     baseName,
 				FirstVolume:  path,
@@ -182,21 +202,6 @@ func (rc *RestoreCoordinator) discoverArchives(timestampDir string) ([]ArchiveIn
 				RelativePath: relPath,
 			}
 			archiveMap[fullBaseName] = archiveInfo
-		} else {
-			// 如果是其他分卷，添加到对应的ArchiveInfo
-			if archiveInfo, exists := archiveMap[fullBaseName]; exists {
-				archiveInfo.AllVolumes = append(archiveInfo.AllVolumes, path)
-			} else {
-				// 如果还没有找到.7z.001，先创建一个临时的ArchiveInfo
-				archiveInfo := &ArchiveInfo{
-					BaseName:     baseName,
-					FirstVolume:  "", // 稍后会被.7z.001更新
-					AllVolumes:   []string{path},
-					TimestampDir: timestampDir,
-					RelativePath: relPath,
-				}
-				archiveMap[fullBaseName] = archiveInfo
-			}
 		}
 
 		return nil
@@ -209,16 +214,21 @@ func (rc *RestoreCoordinator) discoverArchives(timestampDir string) ([]ArchiveIn
 	// 转换为切片并排序
 	var archives []ArchiveInfo
 	for _, archiveInfo := range archiveMap {
-		// 确保FirstVolume已设置
-		if archiveInfo.FirstVolume == "" {
-			// 如果没有找到.7z.001，使用第一个分卷
-			if len(archiveInfo.AllVolumes) > 0 {
-				sort.Strings(archiveInfo.AllVolumes)
+		// 对分卷进行排序
+		sort.Strings(archiveInfo.AllVolumes)
+		// Ensure FirstVolume is set to the first volume (.7z.001 or first available)
+		if len(archiveInfo.AllVolumes) > 0 {
+			// Look for .7z.001 first
+			for _, vol := range archiveInfo.AllVolumes {
+				if strings.HasSuffix(vol, ".7z.001") {
+					archiveInfo.FirstVolume = vol
+					break
+				}
+			}
+			// If no .7z.001, use the first volume
+			if archiveInfo.FirstVolume == "" || !strings.HasSuffix(archiveInfo.FirstVolume, ".7z.001") {
 				archiveInfo.FirstVolume = archiveInfo.AllVolumes[0]
 			}
-		} else {
-			// 对分卷进行排序
-			sort.Strings(archiveInfo.AllVolumes)
 		}
 		archives = append(archives, *archiveInfo)
 	}
@@ -329,10 +339,20 @@ func (rc *RestoreCoordinator) Execute(options RestoreOptions) (*RestoreReport, e
 // extractArchive 解压单个压缩文件到源目录
 // Requirements: 14.1, 14.2, 14.3, 14.5
 func (rc *RestoreCoordinator) extractArchive(archive ArchiveInfo) error {
+	// Determine the output directory based on the archive's relative path
+	// If the archive is in a subdirectory, we need to extract to that subdirectory
+	outputDir := rc.config.SourceDir
+	
+	// Get the directory containing the archive (relative to timestamp dir)
+	archiveDir := filepath.Dir(archive.RelativePath)
+	if archiveDir != "." && archiveDir != "" {
+		outputDir = filepath.Join(rc.config.SourceDir, archiveDir)
+	}
+
 	// Use the first volume for extraction (7zip will automatically find other volumes)
 	params := sevenzip.ExtractParams{
 		Archive:   archive.FirstVolume,
-		OutputDir: rc.config.SourceDir,
+		OutputDir: outputDir,
 		Password:  rc.config.Password,
 	}
 
@@ -349,10 +369,19 @@ func (rc *RestoreCoordinator) extractArchive(archive ArchiveInfo) error {
 func (rc *RestoreCoordinator) handleDeletedFiles(timestamps []string) (int, error) {
 	deletedCount := 0
 
-	// Create a set of timestamps we're restoring
-	timestampSet := make(map[string]bool)
-	for _, ts := range timestamps {
-		timestampSet[ts] = true
+	// If we're doing a full restore (all timestamps), handle deleted files
+	// If we're doing a selective restore, we DON'T delete files because we don't know
+	// if the deletion happened before or after the timestamps we're restoring
+	allTimestamps, err := rc.discoverTimestamps()
+	if err != nil {
+		return 0, fmt.Errorf("发现时间戳失败: %w", err)
+	}
+
+	// Only delete files if we're restoring ALL timestamps (full restore)
+	isFullRestore := len(timestamps) == len(allTimestamps)
+	if !isFullRestore {
+		// For selective restore, don't delete files
+		return 0, nil
 	}
 
 	// Iterate through index to find deleted files
@@ -362,13 +391,8 @@ func (rc *RestoreCoordinator) handleDeletedFiles(timestamps []string) (int, erro
 			continue
 		}
 
-		// Check if this file's timestamp is in our restore range
-		if !timestampSet[entry.TimestampDir] {
-			continue
-		}
-
 		// Delete the file from source directory
-		filePath := filepath.Join(rc.config.SourceDir, entry.SourcePath)
+		filePath := filepath.Join(rc.config.SourceDir, filepath.FromSlash(entry.SourcePath))
 
 		// Check if file exists
 		if _, err := os.Stat(filePath); os.IsNotExist(err) {

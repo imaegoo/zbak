@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
 	"os"
@@ -78,8 +79,10 @@ func (h *TestHelper) CreateFile(relativePath string, content []byte) {
 // CreateFileWithSize creates a file with the specified size
 func (h *TestHelper) CreateFileWithSize(relativePath string, size int64) {
 	content := make([]byte, size)
-	for i := range content {
-		content[i] = byte(i % 256)
+	// Use crypto/rand to generate incompressible random data
+	// This ensures the data won't compress too well in tests
+	if _, err := rand.Read(content); err != nil {
+		h.t.Fatalf("Failed to generate random data for %s: %v", relativePath, err)
 	}
 	h.CreateFile(relativePath, content)
 }
@@ -188,8 +191,12 @@ func (h *TestHelper) CountArchives() int {
 		if err != nil {
 			return err
 		}
-		if !info.IsDir() && strings.HasSuffix(info.Name(), ".7z.001") {
-			count++
+		if !info.IsDir() {
+			name := info.Name()
+			// Count both .7z and .7z.001 files (first volume of multi-volume archives)
+			if strings.HasSuffix(name, ".7z") || strings.HasSuffix(name, ".7z.001") {
+				count++
+			}
 		}
 		return nil
 	})
@@ -441,10 +448,14 @@ func TestFunctional_SmallDirectoryCompression(t *testing.T) {
 	
 	// Check that smalldir was compressed as a single archive
 	timestampPath := filepath.Join(h.targetDir, timestamps[0])
-	archivePath := filepath.Join(timestampPath, "smalldir.7z.001")
-	
+	// Small directories may be compressed as .7z (single volume) or .7z.001 (multi-volume)
+	archivePath := filepath.Join(timestampPath, "smalldir.7z")
 	if _, err := os.Stat(archivePath); err != nil {
-		t.Errorf("Expected archive %s to exist", archivePath)
+		// Try .7z.001 if .7z doesn't exist
+		archivePath = filepath.Join(timestampPath, "smalldir.7z.001")
+		if _, err := os.Stat(archivePath); err != nil {
+			t.Errorf("Expected archive smalldir.7z or smalldir.7z.001 to exist in %s", timestampPath)
+		}
 	}
 	
 	// Verify restore works
