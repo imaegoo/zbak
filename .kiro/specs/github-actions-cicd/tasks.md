@@ -45,7 +45,7 @@
   - 设置工作目录和默认 CMD
   - _Requirements: 3.2, 3.7, 3.8, 3.9_
 
-- [~] 5. 修改 main.go 支持动态版本注入
+- [x] 5. 修改 main.go 支持动态版本注入
   - 修改 `cmd/zbak/main.go` 中的 version 变量为可被 ldflags 覆盖
   - 将 `const version = "0.1.0"` 改为 `var version = "dev"`
   - 确保 `--version` 和 `--help` 命令正确显示版本信息
