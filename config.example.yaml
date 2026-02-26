@@ -1,0 +1,17 @@
+# zbak 配置文件示例
+
+# 源目录路径（需要备份的NAS目录）
+source_dir: /path/to/nas/source
+
+# 目标目录路径（存储备份文件的目录）
+target_dir: /path/to/backup/target
+
+# 分卷大小（单位：字节）
+# 4GB = 4294967296 字节
+volume_size: 4294967296
+
+# 加密密码
+password: your_secure_password
+
+# 并发数（同时执行压缩任务的数量，最小值为1）
+concurrency: 4
