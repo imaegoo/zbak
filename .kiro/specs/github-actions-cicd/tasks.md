@@ -18,7 +18,7 @@
   - 添加编译步骤（`go build ./cmd/zbak`）
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 1.8, 6.1_
 
-- [~] 2. 创建 Release 工作流配置文件
+- [x] 2. 创建 Release 工作流配置文件
   - 创建 `.github/workflows/release.yml` 文件
   - 配置触发条件：release published 事件
   - 配置构建矩阵，包含 5 个平台配置（Windows amd64, Linux amd64, Linux arm, macOS amd64, macOS arm64）
