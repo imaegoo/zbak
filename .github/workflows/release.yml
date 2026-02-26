@@ -5,6 +5,10 @@ on:
   release:
     types: [published]
 
+# 声明所需权限
+permissions:
+  contents: write  # 需要写入权限以上传 Release Assets
+
 jobs:
   build:
     name: Build Multi-Platform Binaries
