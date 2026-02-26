@@ -172,32 +172,28 @@ func (bc *BackupCoordinator) buildCompressionTasks(changeSet *detector.ChangeSet
 		return tasks, nil
 	}
 
-	// Group files by their parent directory
+	// Group files by their top-level directory (first component of path)
+	// This ensures that all files under a directory like "2026" are grouped together
+	// rather than being split by subdirectories
 	dirMap := make(map[string][]string)
 	for _, relPath := range changedFiles {
-		dir := filepath.Dir(relPath)
-		if dir == "." {
-			dir = ""
+		// Get the top-level directory (first path component)
+		parts := strings.Split(filepath.ToSlash(relPath), "/")
+		var topDir string
+		if len(parts) > 1 {
+			// File is in a subdirectory, use the first directory component
+			topDir = parts[0]
+		} else {
+			// File is in root directory
+			topDir = ""
 		}
-		dirMap[dir] = append(dirMap[dir], relPath)
+		dirMap[topDir] = append(dirMap[topDir], relPath)
 	}
 
-	// Filter out directories that are subdirectories of other directories in the map
-	// This prevents creating duplicate tasks for nested directories
-	topLevelDirs := make(map[string]bool)
-	for dir := range dirMap {
-		isTopLevel := true
-		// Check if this directory is a subdirectory of any other directory in the map
-		for otherDir := range dirMap {
-			if dir != otherDir && strings.HasPrefix(dir, otherDir+string(filepath.Separator)) {
-				isTopLevel = false
-				break
-			}
-		}
-		if isTopLevel {
-			topLevelDirs[dir] = true
-		}
-	}
+	// Since we're already grouping by top-level directories,
+	// we don't need to filter out subdirectories anymore
+	// All directories in dirMap are already at the top level
+	topLevelDirs := dirMap
 
 	// Build tasks only for top-level directories
 	for dir := range topLevelDirs {

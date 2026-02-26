@@ -97,8 +97,13 @@ func (s *Service) DetermineStrategy(dirPath string, volumeSize int64) (Compressi
 		return 0, fmt.Errorf("failed to determine compression strategy: %w", err)
 	}
 
+	// Log strategy decision for debugging
+	fmt.Printf("[DEBUG] DetermineStrategy: path=%s, size=%d bytes (%.2f MB), volumeSize=%d bytes (%.2f GB)\n",
+		dirPath, dirSize, float64(dirSize)/(1024*1024), volumeSize, float64(volumeSize)/(1024*1024*1024))
+
 	// Small directory: compress as single file
 	if dirSize < volumeSize {
+		fmt.Printf("[DEBUG] Strategy: SmallDir (size < volumeSize)\n")
 		return StrategySmallDir, nil
 	}
 
@@ -109,9 +114,11 @@ func (s *Service) DetermineStrategy(dirPath string, volumeSize int64) (Compressi
 	}
 
 	if hasSubdirs {
+		fmt.Printf("[DEBUG] Strategy: LargeWithSubdir (size >= volumeSize && hasSubdirs)\n")
 		return StrategyLargeWithSubdir, nil
 	}
 
+	fmt.Printf("[DEBUG] Strategy: LargeNoSubdir (size >= volumeSize && !hasSubdirs)\n")
 	return StrategyLargeNoSubdir, nil
 }
 
@@ -149,6 +156,9 @@ func (s *Service) compressSmallDir(ctx context.Context, task CompressionTask) er
 		}
 	}
 
+	fmt.Printf("[DEBUG] compressSmallDir: source=%s, target=%s, output=%s\n", 
+		task.SourcePath, task.TargetPath, outputFile)
+
 	// Compress the entire directory
 	params := CompressParams{
 		Sources:    []string{task.SourcePath},
@@ -161,6 +171,7 @@ func (s *Service) compressSmallDir(ctx context.Context, task CompressionTask) er
 		return fmt.Errorf("failed to compress small directory: %w", err)
 	}
 
+	fmt.Printf("[DEBUG] compressSmallDir: compression completed successfully\n")
 	return nil
 }
 
