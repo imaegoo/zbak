@@ -36,7 +36,7 @@
   - 配置镜像标签（版本号 + latest）
   - _Requirements: 3.1, 3.3, 3.4, 3.5, 3.6, 3.10, 3.11, 3.12, 5.5, 6.3_
 
-- [~] 4. 创建 Dockerfile
+- [x] 4. 创建 Dockerfile
   - 创建项目根目录下的 `Dockerfile` 文件
   - 使用多阶段构建：第一阶段编译 Go 二进制，第二阶段创建运行时镜像
   - 使用 Alpine Linux 作为基础镜像
