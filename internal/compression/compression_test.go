@@ -728,10 +728,10 @@ func TestCompressDirectory_LargeWithSubdir_OnlyFiles(t *testing.T) {
 		t.Errorf("Expected 1 compress call, got %d", len(mockZip.compressCalls))
 	}
 
-	// Verify the output is zbaksubfiles.7z.001
+	// Verify the output is zbaksubfiles.7z
 	call := mockZip.compressCalls[0]
-	if !strings.HasSuffix(call.Output, "zbaksubfiles.7z.001") {
-		t.Errorf("Expected output to end with zbaksubfiles.7z.001, got %s", call.Output)
+	if !strings.HasSuffix(call.Output, "zbaksubfiles.7z") {
+		t.Errorf("Expected output to end with zbaksubfiles.7z, got %s", call.Output)
 	}
 
 	// Verify all files are included
@@ -855,7 +855,7 @@ func TestCompressDirectory_LargeWithSubdir_MixedContent(t *testing.T) {
 
 	// Verify compress was called twice:
 	// 1. For subdirectory (processed first)
-	// 2. For root files (zbaksubfiles.7z.001)
+	// 2. For root files (zbaksubfiles.7z)
 	if len(mockZip.compressCalls) != 2 {
 		t.Errorf("Expected 2 compress calls, got %d", len(mockZip.compressCalls))
 	}
@@ -865,9 +865,9 @@ func TestCompressDirectory_LargeWithSubdir_MixedContent(t *testing.T) {
 		t.Errorf("Expected first call to be for subdir, got %s", mockZip.compressCalls[0].Output)
 	}
 
-	// Second call should be for zbaksubfiles.7z.001
-	if !strings.HasSuffix(mockZip.compressCalls[1].Output, "zbaksubfiles.7z.001") {
-		t.Errorf("Expected second call to be for zbaksubfiles.7z.001, got %s", mockZip.compressCalls[1].Output)
+	// Second call should be for zbaksubfiles.7z
+	if !strings.HasSuffix(mockZip.compressCalls[1].Output, "zbaksubfiles.7z") {
+		t.Errorf("Expected second call to be for zbaksubfiles.7z, got %s", mockZip.compressCalls[1].Output)
 	}
 }
 
@@ -1154,9 +1154,9 @@ func TestCompressDirectory_LargeWithSubdir_TargetPathHandling(t *testing.T) {
 				t.Errorf("Expected 1 compress call, got %d", len(mockZip.compressCalls))
 			}
 
-			// Verify output ends with zbaksubfiles.7z.001
-			if !strings.HasSuffix(mockZip.compressCalls[0].Output, "zbaksubfiles.7z.001") {
-				t.Errorf("Expected output to end with zbaksubfiles.7z.001, got %s", mockZip.compressCalls[0].Output)
+			// Verify output ends with zbaksubfiles.7z
+			if !strings.HasSuffix(mockZip.compressCalls[0].Output, "zbaksubfiles.7z") {
+				t.Errorf("Expected output to end with zbaksubfiles.7z, got %s", mockZip.compressCalls[0].Output)
 			}
 		})
 	}

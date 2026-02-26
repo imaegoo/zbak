@@ -62,8 +62,8 @@ func TestNewBackupCoordinator(t *testing.T) {
 	fs := filesystem.NewService()
 	sz := sevenzip.NewWrapper()
 	szAdapter := newSevenZipAdapter(sz)
-	compressionSvc := compression.NewService(fs, szAdapter, log)
 	log := &mockLogger{}
+	compressionSvc := compression.NewService(fs, szAdapter, log)
 
 	bc := NewBackupCoordinator(cfg, compressionSvc, log)
 
@@ -523,8 +523,8 @@ func TestBackupCoordinator_BuildCompressionTasks(t *testing.T) {
 	fs := filesystem.NewService()
 	sz := sevenzip.NewWrapper()
 	szAdapter := newSevenZipAdapter(sz)
-	compressionSvc := compression.NewService(fs, szAdapter, log)
 	log := &mockLogger{}
+	compressionSvc := compression.NewService(fs, szAdapter, log)
 	bc := NewBackupCoordinator(cfg, compressionSvc, log)
 
 	// Create change set
