@@ -235,6 +235,12 @@ func (bc *BackupCoordinator) buildCompressionTasks(changeSet *detector.ChangeSet
 			targetPath = filepath.Join(bc.timestampMgr.GetTimestampPath(timestamp), dir)
 		}
 
+		// Determine compression level (default to 1 if not set)
+		compressionLevel := 1
+		if bc.config.CompressionLevel != nil {
+			compressionLevel = *bc.config.CompressionLevel
+		}
+
 		// Create compression task
 		task := compression.CompressionTask{
 			SourcePath:       sourcePath,
@@ -242,7 +248,7 @@ func (bc *BackupCoordinator) buildCompressionTasks(changeSet *detector.ChangeSet
 			Password:         bc.config.Password,
 			VolumeSize:       bc.config.VolumeSize,
 			Strategy:         strategy,
-			CompressionLevel: *bc.config.CompressionLevel,
+			CompressionLevel: compressionLevel,
 		}
 
 		tasks = append(tasks, task)
