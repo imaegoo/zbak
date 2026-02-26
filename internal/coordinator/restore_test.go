@@ -1,9 +1,12 @@
 package coordinator
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"zbak/internal/config"
 	"zbak/internal/index"
@@ -421,4 +424,469 @@ func TestDiscoverArchives_MissingFirstVolume(t *testing.T) {
 			t.Errorf("期望 2 个分卷，实际 %d 个", len(archives[0].AllVolumes))
 		}
 	}
+}
+
+// TestExecute_FullRestore 测试完整恢复流程
+func TestExecute_FullRestore(t *testing.T) {
+	// 创建临时目录
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	targetDir := filepath.Join(tempDir, "target")
+
+	// 创建源目录和目标目录
+	if err := os.MkdirAll(sourceDir, 0755); err != nil {
+		t.Fatalf("创建源目录失败: %v", err)
+	}
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		t.Fatalf("创建目标目录失败: %v", err)
+	}
+
+	// 创建时间戳目录和测试文件
+	timestamp := "2024-01-15-10-30-00"
+	timestampPath := filepath.Join(targetDir, timestamp)
+	if err := os.MkdirAll(timestampPath, 0755); err != nil {
+		t.Fatalf("创建时间戳目录失败: %v", err)
+	}
+
+	// 创建测试压缩文件
+	archivePath := filepath.Join(timestampPath, "test.7z.001")
+	if err := os.WriteFile(archivePath, []byte("test archive"), 0644); err != nil {
+		t.Fatalf("创建测试压缩文件失败: %v", err)
+	}
+
+	// 创建文件索引
+	idx := index.NewFileIndex()
+
+	// 创建mock 7zip wrapper
+	mockSevenZip := &mockSevenZipWrapper{
+		extractFunc: func(params sevenzip.ExtractParams) error {
+			// 模拟解压：创建一个测试文件
+			testFile := filepath.Join(params.OutputDir, "test.txt")
+			return os.WriteFile(testFile, []byte("restored content"), 0644)
+		},
+	}
+
+	// 创建恢复协调器
+	cfg := &config.Config{
+		SourceDir: sourceDir,
+		TargetDir: targetDir,
+		Password:  "test123",
+	}
+	rc := NewRestoreCoordinator(cfg, idx, mockSevenZip, &mockLogger{})
+
+	// 执行恢复
+	report, err := rc.Execute(RestoreOptions{})
+	if err != nil {
+		t.Fatalf("恢复失败: %v", err)
+	}
+
+	// 验证报告
+	if report.RestoredFiles != 1 {
+		t.Errorf("期望恢复 1 个文件，实际 %d", report.RestoredFiles)
+	}
+
+	if report.FailedFiles != 0 {
+		t.Errorf("期望 0 个失败文件，实际 %d", report.FailedFiles)
+	}
+
+	// 验证文件已恢复
+	restoredFile := filepath.Join(sourceDir, "test.txt")
+	if _, err := os.Stat(restoredFile); os.IsNotExist(err) {
+		t.Errorf("恢复的文件不存在: %s", restoredFile)
+	}
+}
+
+// TestExecute_SelectiveRestore_SingleTimestamp 测试选择性恢复（单个时间戳）
+func TestExecute_SelectiveRestore_SingleTimestamp(t *testing.T) {
+	// 创建临时目录
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	targetDir := filepath.Join(tempDir, "target")
+
+	if err := os.MkdirAll(sourceDir, 0755); err != nil {
+		t.Fatalf("创建源目录失败: %v", err)
+	}
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		t.Fatalf("创建目标目录失败: %v", err)
+	}
+
+	// 创建多个时间戳目录
+	timestamps := []string{
+		"2024-01-13-08-15-00",
+		"2024-01-14-09-20-00",
+		"2024-01-15-10-30-00",
+	}
+
+	for _, ts := range timestamps {
+		tsPath := filepath.Join(targetDir, ts)
+		if err := os.MkdirAll(tsPath, 0755); err != nil {
+			t.Fatalf("创建时间戳目录失败: %v", err)
+		}
+
+		// 创建测试压缩文件
+		archivePath := filepath.Join(tsPath, "test.7z.001")
+		if err := os.WriteFile(archivePath, []byte("test"), 0644); err != nil {
+			t.Fatalf("创建测试压缩文件失败: %v", err)
+		}
+	}
+
+	// 创建文件索引
+	idx := index.NewFileIndex()
+
+	// 记录解压的时间戳
+	var extractedTimestamps []string
+	mockSevenZip := &mockSevenZipWrapper{
+		extractFunc: func(params sevenzip.ExtractParams) error {
+			// 记录哪个时间戳被解压
+			for _, ts := range timestamps {
+				if strings.Contains(params.Archive, ts) {
+					extractedTimestamps = append(extractedTimestamps, ts)
+					break
+				}
+			}
+			return nil
+		},
+	}
+
+	// 创建恢复协调器
+	cfg := &config.Config{
+		SourceDir: sourceDir,
+		TargetDir: targetDir,
+		Password:  "test123",
+	}
+	rc := NewRestoreCoordinator(cfg, idx, mockSevenZip, &mockLogger{})
+
+	// 执行选择性恢复（只恢复中间的时间戳）
+	report, err := rc.Execute(RestoreOptions{
+		Timestamp: "2024-01-14-09-20-00",
+	})
+	if err != nil {
+		t.Fatalf("恢复失败: %v", err)
+	}
+
+	// 验证只恢复了一个时间戳
+	if len(extractedTimestamps) != 1 {
+		t.Errorf("期望恢复 1 个时间戳，实际 %d", len(extractedTimestamps))
+	}
+
+	if len(extractedTimestamps) > 0 && extractedTimestamps[0] != "2024-01-14-09-20-00" {
+		t.Errorf("期望恢复时间戳 2024-01-14-09-20-00，实际 %s", extractedTimestamps[0])
+	}
+
+	if report.RestoredFiles != 1 {
+		t.Errorf("期望恢复 1 个文件，实际 %d", report.RestoredFiles)
+	}
+}
+
+// TestExecute_SelectiveRestore_TimeRange 测试选择性恢复（时间范围）
+func TestExecute_SelectiveRestore_TimeRange(t *testing.T) {
+	// 创建临时目录
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	targetDir := filepath.Join(tempDir, "target")
+
+	if err := os.MkdirAll(sourceDir, 0755); err != nil {
+		t.Fatalf("创建源目录失败: %v", err)
+	}
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		t.Fatalf("创建目标目录失败: %v", err)
+	}
+
+	// 创建多个时间戳目录
+	timestamps := []string{
+		"2024-01-13-08-15-00",
+		"2024-01-14-09-20-00",
+		"2024-01-15-10-30-00",
+		"2024-01-16-14-45-00",
+	}
+
+	for _, ts := range timestamps {
+		tsPath := filepath.Join(targetDir, ts)
+		if err := os.MkdirAll(tsPath, 0755); err != nil {
+			t.Fatalf("创建时间戳目录失败: %v", err)
+		}
+
+		// 创建测试压缩文件
+		archivePath := filepath.Join(tsPath, "test.7z.001")
+		if err := os.WriteFile(archivePath, []byte("test"), 0644); err != nil {
+			t.Fatalf("创建测试压缩文件失败: %v", err)
+		}
+	}
+
+	// 创建文件索引
+	idx := index.NewFileIndex()
+
+	// 记录解压的时间戳
+	var extractedTimestamps []string
+	mockSevenZip := &mockSevenZipWrapper{
+		extractFunc: func(params sevenzip.ExtractParams) error {
+			for _, ts := range timestamps {
+				if strings.Contains(params.Archive, ts) {
+					extractedTimestamps = append(extractedTimestamps, ts)
+					break
+				}
+			}
+			return nil
+		},
+	}
+
+	// 创建恢复协调器
+	cfg := &config.Config{
+		SourceDir: sourceDir,
+		TargetDir: targetDir,
+		Password:  "test123",
+	}
+	rc := NewRestoreCoordinator(cfg, idx, mockSevenZip, &mockLogger{})
+
+	// 执行范围恢复
+	report, err := rc.Execute(RestoreOptions{
+		FromTime: "2024-01-14-00-00-00",
+		ToTime:   "2024-01-15-23-59-59",
+	})
+	if err != nil {
+		t.Fatalf("恢复失败: %v", err)
+	}
+
+	// 验证恢复了正确的时间戳
+	expectedTimestamps := []string{
+		"2024-01-14-09-20-00",
+		"2024-01-15-10-30-00",
+	}
+
+	if len(extractedTimestamps) != len(expectedTimestamps) {
+		t.Errorf("期望恢复 %d 个时间戳，实际 %d", len(expectedTimestamps), len(extractedTimestamps))
+	}
+
+	for i, expected := range expectedTimestamps {
+		if i >= len(extractedTimestamps) || extractedTimestamps[i] != expected {
+			t.Errorf("时间戳 %d: 期望 %s，实际 %s", i, expected, extractedTimestamps[i])
+		}
+	}
+
+	if report.RestoredFiles != 2 {
+		t.Errorf("期望恢复 2 个文件，实际 %d", report.RestoredFiles)
+	}
+}
+
+// TestExecute_HandleDeletedFiles 测试已删除文件处理
+func TestExecute_HandleDeletedFiles(t *testing.T) {
+	// 创建临时目录
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	targetDir := filepath.Join(tempDir, "target")
+
+	if err := os.MkdirAll(sourceDir, 0755); err != nil {
+		t.Fatalf("创建源目录失败: %v", err)
+	}
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		t.Fatalf("创建目标目录失败: %v", err)
+	}
+
+	// 创建时间戳目录
+	timestamp := "2024-01-15-10-30-00"
+	timestampPath := filepath.Join(targetDir, timestamp)
+	if err := os.MkdirAll(timestampPath, 0755); err != nil {
+		t.Fatalf("创建时间戳目录失败: %v", err)
+	}
+
+	// 创建测试压缩文件
+	archivePath := filepath.Join(timestampPath, "test.7z.001")
+	if err := os.WriteFile(archivePath, []byte("test"), 0644); err != nil {
+		t.Fatalf("创建测试压缩文件失败: %v", err)
+	}
+
+	// 在源目录创建一个文件（将被删除）
+	deletedFile := filepath.Join(sourceDir, "deleted.txt")
+	if err := os.WriteFile(deletedFile, []byte("to be deleted"), 0644); err != nil {
+		t.Fatalf("创建测试文件失败: %v", err)
+	}
+
+	// 创建文件索引，标记文件为已删除
+	idx := index.NewFileIndex()
+	idx.Files["deleted.txt"] = index.FileEntry{
+		SourcePath:   "deleted.txt",
+		Size:         13,
+		ModTime:      time.Now(),
+		ArchivePath:  filepath.Join(timestamp, "test.7z.001"),
+		TimestampDir: timestamp,
+		Deleted:      true,
+	}
+
+	mockSevenZip := &mockSevenZipWrapper{
+		extractFunc: func(params sevenzip.ExtractParams) error {
+			return nil
+		},
+	}
+
+	// 创建恢复协调器
+	cfg := &config.Config{
+		SourceDir: sourceDir,
+		TargetDir: targetDir,
+		Password:  "test123",
+	}
+	rc := NewRestoreCoordinator(cfg, idx, mockSevenZip, &mockLogger{})
+
+	// 执行恢复
+	report, err := rc.Execute(RestoreOptions{})
+	if err != nil {
+		t.Fatalf("恢复失败: %v", err)
+	}
+
+	// 验证文件已被删除
+	if _, err := os.Stat(deletedFile); !os.IsNotExist(err) {
+		t.Errorf("期望文件被删除，但文件仍然存在: %s", deletedFile)
+	}
+
+	if report.DeletedFiles != 1 {
+		t.Errorf("期望删除 1 个文件，实际 %d", report.DeletedFiles)
+	}
+}
+
+// TestExecute_ErrorHandling 测试错误处理
+func TestExecute_ErrorHandling(t *testing.T) {
+	// 创建临时目录
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	targetDir := filepath.Join(tempDir, "target")
+
+	if err := os.MkdirAll(sourceDir, 0755); err != nil {
+		t.Fatalf("创建源目录失败: %v", err)
+	}
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		t.Fatalf("创建目标目录失败: %v", err)
+	}
+
+	// 创建时间戳目录
+	timestamp := "2024-01-15-10-30-00"
+	timestampPath := filepath.Join(targetDir, timestamp)
+	if err := os.MkdirAll(timestampPath, 0755); err != nil {
+		t.Fatalf("创建时间戳目录失败: %v", err)
+	}
+
+	// 创建多个测试压缩文件
+	for i := 1; i <= 3; i++ {
+		archivePath := filepath.Join(timestampPath, fmt.Sprintf("test%d.7z.001", i))
+		if err := os.WriteFile(archivePath, []byte("test"), 0644); err != nil {
+			t.Fatalf("创建测试压缩文件失败: %v", err)
+		}
+	}
+
+	// 创建文件索引
+	idx := index.NewFileIndex()
+
+	// 创建mock 7zip wrapper，第二个文件解压失败
+	extractCount := 0
+	mockSevenZip := &mockSevenZipWrapper{
+		extractFunc: func(params sevenzip.ExtractParams) error {
+			extractCount++
+			if extractCount == 2 {
+				return fmt.Errorf("模拟解压失败")
+			}
+			return nil
+		},
+	}
+
+	// 创建恢复协调器
+	cfg := &config.Config{
+		SourceDir: sourceDir,
+		TargetDir: targetDir,
+		Password:  "test123",
+	}
+	rc := NewRestoreCoordinator(cfg, idx, mockSevenZip, &mockLogger{})
+
+	// 执行恢复
+	report, err := rc.Execute(RestoreOptions{})
+	if err != nil {
+		t.Fatalf("恢复失败: %v", err)
+	}
+
+	// 验证报告
+	if report.RestoredFiles != 2 {
+		t.Errorf("期望恢复 2 个文件，实际 %d", report.RestoredFiles)
+	}
+
+	if report.FailedFiles != 1 {
+		t.Errorf("期望 1 个失败文件，实际 %d", report.FailedFiles)
+	}
+
+	if len(report.Errors) != 1 {
+		t.Errorf("期望 1 个错误，实际 %d", len(report.Errors))
+	}
+}
+
+// TestExecute_EmptyTimestamps 测试空时间戳列表
+func TestExecute_EmptyTimestamps(t *testing.T) {
+	// 创建临时目录
+	tempDir := t.TempDir()
+	sourceDir := filepath.Join(tempDir, "source")
+	targetDir := filepath.Join(tempDir, "target")
+
+	if err := os.MkdirAll(sourceDir, 0755); err != nil {
+		t.Fatalf("创建源目录失败: %v", err)
+	}
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		t.Fatalf("创建目标目录失败: %v", err)
+	}
+
+	// 不创建任何时间戳目录
+
+	// 创建文件索引
+	idx := index.NewFileIndex()
+
+	mockSevenZip := &mockSevenZipWrapper{
+		extractFunc: func(params sevenzip.ExtractParams) error {
+			return nil
+		},
+	}
+
+	// 创建恢复协调器
+	cfg := &config.Config{
+		SourceDir: sourceDir,
+		TargetDir: targetDir,
+		Password:  "test123",
+	}
+	rc := NewRestoreCoordinator(cfg, idx, mockSevenZip, &mockLogger{})
+
+	// 执行恢复
+	report, err := rc.Execute(RestoreOptions{})
+	if err != nil {
+		t.Fatalf("恢复失败: %v", err)
+	}
+
+	// 验证报告
+	if report.RestoredFiles != 0 {
+		t.Errorf("期望恢复 0 个文件，实际 %d", report.RestoredFiles)
+	}
+
+	if report.FailedFiles != 0 {
+		t.Errorf("期望 0 个失败文件，实际 %d", report.FailedFiles)
+	}
+}
+
+// mockSevenZipWrapper 是用于测试的mock 7zip wrapper
+type mockSevenZipWrapper struct {
+	detectFunc  func() (string, error)
+	compressFunc func(params sevenzip.CompressParams) error
+	extractFunc func(params sevenzip.ExtractParams) error
+}
+
+func (m *mockSevenZipWrapper) Detect() (string, error) {
+	if m.detectFunc != nil {
+		return m.detectFunc()
+	}
+	return "7z", nil
+}
+
+func (m *mockSevenZipWrapper) Compress(params sevenzip.CompressParams) error {
+	if m.compressFunc != nil {
+		return m.compressFunc(params)
+	}
+	return nil
+}
+
+func (m *mockSevenZipWrapper) Extract(params sevenzip.ExtractParams) error {
+	if m.extractFunc != nil {
+		return m.extractFunc(params)
+	}
+	return nil
 }

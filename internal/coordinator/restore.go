@@ -244,3 +244,163 @@ func (rc *RestoreCoordinator) extractBaseName(filename string) string {
 	}
 	return filename[:idx]
 }
+
+// Execute 执行恢复操作
+// Requirements: 14.1, 14.2, 14.3, 14.4, 14.5, 14.6, 14.7, 15.1, 15.2, 15.3, 15.4, 15.5
+func (rc *RestoreCoordinator) Execute(options RestoreOptions) (*RestoreReport, error) {
+	report := &RestoreReport{
+		StartTime: time.Now(),
+		Errors:    make([]error, 0),
+	}
+
+	rc.logger.Info("开始恢复操作")
+
+	// Step 1: Discover all timestamps
+	rc.logger.Info("发现时间戳目录")
+	allTimestamps, err := rc.discoverTimestamps()
+	if err != nil {
+		return nil, fmt.Errorf("发现时间戳目录失败: %w", err)
+	}
+	rc.logger.Info("发现 %d 个时间戳目录", len(allTimestamps))
+
+	// Step 2: Filter timestamps based on options
+	rc.logger.Info("过滤时间戳目录")
+	timestamps, err := rc.filterTimestamps(allTimestamps, options)
+	if err != nil {
+		return nil, fmt.Errorf("过滤时间戳失败: %w", err)
+	}
+	rc.logger.Info("选择 %d 个时间戳进行恢复", len(timestamps))
+
+	if len(timestamps) == 0 {
+		rc.logger.Info("没有时间戳需要恢复")
+		report.EndTime = time.Now()
+		return report, nil
+	}
+
+	// Step 3: Process each timestamp in order (from old to new)
+	for _, timestamp := range timestamps {
+		rc.logger.Info("处理时间戳: %s", timestamp)
+
+		// Discover archives in this timestamp
+		archives, err := rc.discoverArchives(timestamp)
+		if err != nil {
+			rc.logger.Error("发现压缩文件失败: %s, 错误: %v", timestamp, err)
+			report.Errors = append(report.Errors, fmt.Errorf("发现压缩文件失败 [%s]: %w", timestamp, err))
+			continue
+		}
+
+		rc.logger.Info("在时间戳 %s 中发现 %d 个压缩文件", timestamp, len(archives))
+
+		// Extract each archive
+		for _, archive := range archives {
+			rc.logger.Info("解压: %s", archive.RelativePath)
+
+			// Extract archive to source directory
+			if err := rc.extractArchive(archive); err != nil {
+				rc.logger.Error("解压失败: %s, 错误: %v", archive.RelativePath, err)
+				report.Errors = append(report.Errors, fmt.Errorf("解压失败 [%s]: %w", archive.RelativePath, err))
+				report.FailedFiles++
+				continue
+			}
+
+			report.RestoredFiles++
+		}
+	}
+
+	// Step 4: Handle deleted files
+	rc.logger.Info("处理已删除文件")
+	deletedCount, err := rc.handleDeletedFiles(timestamps)
+	if err != nil {
+		rc.logger.Error("处理已删除文件失败: %v", err)
+		report.Errors = append(report.Errors, fmt.Errorf("处理已删除文件失败: %w", err))
+	} else {
+		report.DeletedFiles = deletedCount
+		rc.logger.Info("删除了 %d 个标记为已删除的文件", deletedCount)
+	}
+
+	// Step 5: Generate restore report
+	report.EndTime = time.Now()
+	rc.generateRestoreReport(report)
+
+	rc.logger.Info("恢复操作完成")
+	return report, nil
+}
+
+// extractArchive 解压单个压缩文件到源目录
+// Requirements: 14.1, 14.2, 14.3, 14.5
+func (rc *RestoreCoordinator) extractArchive(archive ArchiveInfo) error {
+	// Use the first volume for extraction (7zip will automatically find other volumes)
+	params := sevenzip.ExtractParams{
+		Archive:   archive.FirstVolume,
+		OutputDir: rc.config.SourceDir,
+		Password:  rc.config.Password,
+	}
+
+	// Execute extraction
+	if err := rc.sevenZipWrapper.Extract(params); err != nil {
+		return fmt.Errorf("7zip解压失败: %w", err)
+	}
+
+	return nil
+}
+
+// handleDeletedFiles 处理标记为已删除的文件
+// Requirements: 14.6
+func (rc *RestoreCoordinator) handleDeletedFiles(timestamps []string) (int, error) {
+	deletedCount := 0
+
+	// Create a set of timestamps we're restoring
+	timestampSet := make(map[string]bool)
+	for _, ts := range timestamps {
+		timestampSet[ts] = true
+	}
+
+	// Iterate through index to find deleted files
+	for _, entry := range rc.indexService.Files {
+		// Skip if not deleted
+		if !entry.Deleted {
+			continue
+		}
+
+		// Check if this file's timestamp is in our restore range
+		if !timestampSet[entry.TimestampDir] {
+			continue
+		}
+
+		// Delete the file from source directory
+		filePath := filepath.Join(rc.config.SourceDir, entry.SourcePath)
+
+		// Check if file exists
+		if _, err := os.Stat(filePath); os.IsNotExist(err) {
+			// File doesn't exist, nothing to do
+			continue
+		}
+
+		// Delete the file
+		if err := os.Remove(filePath); err != nil {
+			rc.logger.Warn("删除文件失败: %s, 错误: %v", entry.SourcePath, err)
+			continue
+		}
+
+		rc.logger.Info("删除文件: %s", entry.SourcePath)
+		deletedCount++
+	}
+
+	return deletedCount, nil
+}
+
+// generateRestoreReport 生成并记录恢复报告
+// Requirements: 14.7
+func (rc *RestoreCoordinator) generateRestoreReport(report *RestoreReport) {
+	duration := report.EndTime.Sub(report.StartTime)
+
+	rc.logger.Info("========== 恢复报告 ==========")
+	rc.logger.Info("开始时间: %s", report.StartTime.Format("2006-01-02 15:04:05"))
+	rc.logger.Info("结束时间: %s", report.EndTime.Format("2006-01-02 15:04:05"))
+	rc.logger.Info("耗时: %s", duration)
+	rc.logger.Info("恢复文件数: %d", report.RestoredFiles)
+	rc.logger.Info("删除文件数: %d", report.DeletedFiles)
+	rc.logger.Info("失败文件数: %d", report.FailedFiles)
+	rc.logger.Info("错误数量: %d", len(report.Errors))
+	rc.logger.Info("==============================")
+}
