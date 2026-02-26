@@ -1125,9 +1125,15 @@ func TestCompressDirectory_LargeWithSubdir_TargetPathHandling(t *testing.T) {
 
 			service := NewService(mockFS, mockZip)
 
+			// Use temp directory for target path
+			targetPath := tt.targetPath
+			if filepath.IsAbs(tt.targetPath) {
+				targetPath = filepath.Join(tempDir, filepath.Base(tt.targetPath))
+			}
+
 			task := CompressionTask{
 				SourcePath: sourceDir,
-				TargetPath: tt.targetPath,
+				TargetPath: targetPath,
 				Password:   "test123",
 				VolumeSize: 1024,
 				Strategy:   StrategyLargeWithSubdir,
