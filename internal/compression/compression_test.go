@@ -14,6 +14,7 @@ import (
 type mockLogger struct{}
 
 func (m *mockLogger) Debug(msg string, args ...interface{}) {}
+func (m *mockLogger) Info(msg string, args ...interface{}) {}
 
 // mockFileSystemService is a mock implementation of FileSystemService for testing
 type mockFileSystemService struct {

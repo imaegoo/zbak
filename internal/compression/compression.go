@@ -79,6 +79,7 @@ type Service struct {
 // Logger defines the interface for logging
 type Logger interface {
 	Debug(msg string, args ...interface{})
+	Info(msg string, args ...interface{})
 }
 
 // NewService creates a new CompressionService instance
@@ -167,6 +168,8 @@ func (s *Service) compressSmallDir(ctx context.Context, task CompressionTask) er
 	s.logger.Debug("compressSmallDir: source=%s, target=%s, output=%s", 
 		task.SourcePath, task.TargetPath, outputFile)
 
+	s.logger.Info("开始压缩小目录: %s -> %s", task.SourcePath, outputFile)
+
 	// Compress the entire directory
 	params := CompressParams{
 		Sources:          []string{task.SourcePath},
@@ -180,6 +183,7 @@ func (s *Service) compressSmallDir(ctx context.Context, task CompressionTask) er
 		return fmt.Errorf("failed to compress small directory: %w", err)
 	}
 
+	s.logger.Info("完成压缩小目录: %s", outputFile)
 	s.logger.Debug("compressSmallDir: compression completed successfully")
 	return nil
 }
@@ -201,6 +205,7 @@ func (s *Service) compressLargeNoSubdir(ctx context.Context, task CompressionTas
 	}
 
 	// Compress with volume splitting
+	s.logger.Info("开始压缩大目录(无子目录): %s -> %s", task.SourcePath, outputFile)
 	params := CompressParams{
 		Sources:          []string{task.SourcePath},
 		Output:           outputFile,
@@ -212,6 +217,8 @@ func (s *Service) compressLargeNoSubdir(ctx context.Context, task CompressionTas
 	if err := s.sevenZip.Compress(params); err != nil {
 		return fmt.Errorf("failed to compress large directory without subdirs: %w", err)
 	}
+
+	s.logger.Info("完成压缩大目录(无子目录): %s", outputFile)
 
 	return nil
 }
@@ -287,6 +294,7 @@ func (s *Service) compressLargeWithSubdir(ctx context.Context, task CompressionT
 		// When VolumeSize > 0, 7zip will add .001 suffix automatically
 		// So we only specify .7z to avoid .7z.001.001
 		filesOutput := filepath.Join(targetDir, "zbaksubfiles.7z")
+		s.logger.Info("开始压缩子文件: %d 个文件 -> %s", len(files), filesOutput)
 		params := CompressParams{
 			Sources:          files,
 			Output:           filesOutput,
@@ -298,6 +306,7 @@ func (s *Service) compressLargeWithSubdir(ctx context.Context, task CompressionT
 		if err := s.sevenZip.Compress(params); err != nil {
 			return fmt.Errorf("failed to compress files in directory: %w", err)
 		}
+		s.logger.Info("完成压缩子文件: %s", filesOutput)
 	}
 
 	return nil
