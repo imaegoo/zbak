@@ -1,0 +1,15 @@
+{
+  "enabled": true,
+  "name": "任务完成自动提交",
+  "description": "每次任务完成后自动执行 git add . 和 git commit，提交信息包含任务简介",
+  "version": "1",
+  "when": {
+    "type": "postTaskExecution"
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "每次任务完成后自动执行 git add . 和 git commit -m \"任务简介\""
+  },
+  "workspaceFolderName": "zbak",
+  "shortName": "auto-commit-task"
+}
