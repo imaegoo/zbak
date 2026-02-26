@@ -185,14 +185,16 @@ func (s *Service) compressSmallDir(ctx context.Context, task CompressionTask) er
 // compressLargeNoSubdir compresses a large directory without subdirectories using volume splitting
 // Requirements: 6.1, 6.2, 6.3, 6.4, 6.5
 func (s *Service) compressLargeNoSubdir(ctx context.Context, task CompressionTask) error {
-	// Generate output filename: dirname.7z.001
-	// Ensure the output always ends with .7z.001
+	// Generate output filename: dirname.7z
+	// When using volume splitting, 7zip will automatically add .001, .002, etc.
+	// So we should NOT add .001 suffix ourselves to avoid .7z.001.001
 	outputFile := task.TargetPath
-	if !strings.HasSuffix(outputFile, ".7z.001") {
-		if strings.HasSuffix(outputFile, ".7z") {
-			outputFile = outputFile + ".001"
+	if !strings.HasSuffix(outputFile, ".7z") {
+		// Remove .001 suffix if present
+		if strings.HasSuffix(outputFile, ".7z.001") {
+			outputFile = strings.TrimSuffix(outputFile, ".001")
 		} else {
-			outputFile = outputFile + ".7z.001"
+			outputFile = outputFile + ".7z"
 		}
 	}
 
@@ -278,7 +280,9 @@ func (s *Service) compressLargeWithSubdir(ctx context.Context, task CompressionT
 			targetDir = filepath.Dir(task.TargetPath)
 		}
 		
-		filesOutput := filepath.Join(targetDir, "zbaksubfiles.7z.001")
+		// When VolumeSize > 0, 7zip will add .001 suffix automatically
+		// So we only specify .7z to avoid .7z.001.001
+		filesOutput := filepath.Join(targetDir, "zbaksubfiles.7z")
 		params := CompressParams{
 			Sources:    files,
 			Output:     filesOutput,
