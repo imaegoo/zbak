@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"zbak/internal/sevenzip"
 )
 
 // CompressionStrategy represents the strategy to use for compressing a directory
@@ -50,16 +52,12 @@ type FileSystemService interface {
 
 // SevenZipWrapper defines the interface for 7zip operations
 type SevenZipWrapper interface {
-	Compress(params CompressParams) error
+	Compress(params sevenzip.CompressParams) error
 }
 
 // CompressParams represents parameters for 7zip compression
-type CompressParams struct {
-	Sources    []string
-	Output     string
-	Password   string
-	VolumeSize int64
-}
+// This is an alias to sevenzip.CompressParams for backward compatibility
+type CompressParams = sevenzip.CompressParams
 
 // CompressionTask represents a compression task
 type CompressionTask struct {
