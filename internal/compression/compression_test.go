@@ -1,6 +1,7 @@
 package compression
 
 import (
+	"context"
 	"errors"
 	"testing"
 )
@@ -9,6 +10,8 @@ import (
 type mockFileSystemService struct {
 	calculateDirSizeFunc func(path string) (int64, error)
 	hasSubdirsFunc       func(path string) (bool, error)
+	listFilesFunc        func(path string) ([]string, error)
+	createDirFunc        func(path string) error
 }
 
 func (m *mockFileSystemService) CalculateDirSize(path string) (int64, error) {
@@ -23,6 +26,34 @@ func (m *mockFileSystemService) HasSubdirs(path string) (bool, error) {
 		return m.hasSubdirsFunc(path)
 	}
 	return false, nil
+}
+
+func (m *mockFileSystemService) ListFiles(path string) ([]string, error) {
+	if m.listFilesFunc != nil {
+		return m.listFilesFunc(path)
+	}
+	return []string{}, nil
+}
+
+func (m *mockFileSystemService) CreateDir(path string) error {
+	if m.createDirFunc != nil {
+		return m.createDirFunc(path)
+	}
+	return nil
+}
+
+// mockSevenZipWrapper is a mock implementation of SevenZipWrapper for testing
+type mockSevenZipWrapper struct {
+	compressFunc func(params CompressParams) error
+	compressCalls []CompressParams
+}
+
+func (m *mockSevenZipWrapper) Compress(params CompressParams) error {
+	m.compressCalls = append(m.compressCalls, params)
+	if m.compressFunc != nil {
+		return m.compressFunc(params)
+	}
+	return nil
 }
 
 func TestDetermineStrategy_SmallDirectory(t *testing.T) {
@@ -60,7 +91,7 @@ func TestDetermineStrategy_SmallDirectory(t *testing.T) {
 				},
 			}
 
-			service := NewService(mockFS)
+			service := NewService(mockFS, &mockSevenZipWrapper{})
 			strategy, err := service.DetermineStrategy("/test/path", tt.volumeSize)
 
 			if (err != nil) != tt.wantErr {
@@ -117,7 +148,7 @@ func TestDetermineStrategy_LargeDirectoryNoSubdirs(t *testing.T) {
 				},
 			}
 
-			service := NewService(mockFS)
+			service := NewService(mockFS, &mockSevenZipWrapper{})
 			strategy, err := service.DetermineStrategy("/test/path", tt.volumeSize)
 
 			if (err != nil) != tt.wantErr {
@@ -174,7 +205,7 @@ func TestDetermineStrategy_LargeDirectoryWithSubdirs(t *testing.T) {
 				},
 			}
 
-			service := NewService(mockFS)
+			service := NewService(mockFS, &mockSevenZipWrapper{})
 			strategy, err := service.DetermineStrategy("/test/path", tt.volumeSize)
 
 			if (err != nil) != tt.wantErr {
@@ -234,7 +265,7 @@ func TestDetermineStrategy_ErrorHandling(t *testing.T) {
 				},
 			}
 
-			service := NewService(mockFS)
+			service := NewService(mockFS, &mockSevenZipWrapper{})
 			_, err := service.DetermineStrategy("/test/path", tt.volumeSize)
 
 			if tt.expectError {
@@ -276,7 +307,8 @@ func TestCompressionStrategy_String(t *testing.T) {
 
 func TestNewService(t *testing.T) {
 	mockFS := &mockFileSystemService{}
-	service := NewService(mockFS)
+	mockZip := &mockSevenZipWrapper{}
+	service := NewService(mockFS, mockZip)
 
 	if service == nil {
 		t.Error("NewService() returned nil")
@@ -284,6 +316,10 @@ func TestNewService(t *testing.T) {
 
 	if service.fs != mockFS {
 		t.Error("NewService() did not set filesystem service correctly")
+	}
+
+	if service.sevenZip != mockZip {
+		t.Error("NewService() did not set sevenzip wrapper correctly")
 	}
 }
 
@@ -300,4 +336,169 @@ func findSubstring(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func TestCompressDirectory_SmallDir(t *testing.T) {
+	mockFS := &mockFileSystemService{
+		createDirFunc: func(path string) error {
+			return nil
+		},
+	}
+
+	mockZip := &mockSevenZipWrapper{}
+
+	service := NewService(mockFS, mockZip)
+
+	task := CompressionTask{
+		SourcePath: "/source/dir",
+		TargetPath: "/target/dir",
+		Password:   "test123",
+		VolumeSize: 1024,
+		Strategy:   StrategySmallDir,
+	}
+
+	err := service.CompressDirectory(context.Background(), task)
+	if err != nil {
+		t.Errorf("CompressDirectory() error = %v", err)
+	}
+
+	// Verify compress was called once
+	if len(mockZip.compressCalls) != 1 {
+		t.Errorf("Expected 1 compress call, got %d", len(mockZip.compressCalls))
+	}
+
+	// Verify parameters
+	call := mockZip.compressCalls[0]
+	if call.Password != "test123" {
+		t.Errorf("Expected password 'test123', got '%s'", call.Password)
+	}
+	if call.VolumeSize != 0 {
+		t.Errorf("Expected VolumeSize 0 for small dir, got %d", call.VolumeSize)
+	}
+	if len(call.Sources) != 1 || call.Sources[0] != "/source/dir" {
+		t.Errorf("Expected sources [/source/dir], got %v", call.Sources)
+	}
+}
+
+func TestCompressDirectory_LargeNoSubdir(t *testing.T) {
+	mockFS := &mockFileSystemService{
+		createDirFunc: func(path string) error {
+			return nil
+		},
+	}
+
+	mockZip := &mockSevenZipWrapper{}
+
+	service := NewService(mockFS, mockZip)
+
+	task := CompressionTask{
+		SourcePath: "/source/dir",
+		TargetPath: "/target/dir",
+		Password:   "test123",
+		VolumeSize: 1024,
+		Strategy:   StrategyLargeNoSubdir,
+	}
+
+	err := service.CompressDirectory(context.Background(), task)
+	if err != nil {
+		t.Errorf("CompressDirectory() error = %v", err)
+	}
+
+	// Verify compress was called once
+	if len(mockZip.compressCalls) != 1 {
+		t.Errorf("Expected 1 compress call, got %d", len(mockZip.compressCalls))
+	}
+
+	// Verify parameters
+	call := mockZip.compressCalls[0]
+	if call.Password != "test123" {
+		t.Errorf("Expected password 'test123', got '%s'", call.Password)
+	}
+	if call.VolumeSize != 1024 {
+		t.Errorf("Expected VolumeSize 1024, got %d", call.VolumeSize)
+	}
+}
+
+func TestCompressDirectory_CreateDirError(t *testing.T) {
+	mockFS := &mockFileSystemService{
+		createDirFunc: func(path string) error {
+			return errors.New("permission denied")
+		},
+	}
+
+	mockZip := &mockSevenZipWrapper{}
+
+	service := NewService(mockFS, mockZip)
+
+	task := CompressionTask{
+		SourcePath: "/source/dir",
+		TargetPath: "/target/dir",
+		Password:   "test123",
+		VolumeSize: 1024,
+		Strategy:   StrategySmallDir,
+	}
+
+	err := service.CompressDirectory(context.Background(), task)
+	if err == nil {
+		t.Error("Expected error when creating directory fails")
+	}
+
+	// Verify compress was not called
+	if len(mockZip.compressCalls) != 0 {
+		t.Errorf("Expected 0 compress calls, got %d", len(mockZip.compressCalls))
+	}
+}
+
+func TestCompressDirectory_CompressError(t *testing.T) {
+	mockFS := &mockFileSystemService{
+		createDirFunc: func(path string) error {
+			return nil
+		},
+	}
+
+	mockZip := &mockSevenZipWrapper{
+		compressFunc: func(params CompressParams) error {
+			return errors.New("7zip failed")
+		},
+	}
+
+	service := NewService(mockFS, mockZip)
+
+	task := CompressionTask{
+		SourcePath: "/source/dir",
+		TargetPath: "/target/dir",
+		Password:   "test123",
+		VolumeSize: 1024,
+		Strategy:   StrategySmallDir,
+	}
+
+	err := service.CompressDirectory(context.Background(), task)
+	if err == nil {
+		t.Error("Expected error when compression fails")
+	}
+}
+
+func TestCompressDirectory_UnknownStrategy(t *testing.T) {
+	mockFS := &mockFileSystemService{
+		createDirFunc: func(path string) error {
+			return nil
+		},
+	}
+
+	mockZip := &mockSevenZipWrapper{}
+
+	service := NewService(mockFS, mockZip)
+
+	task := CompressionTask{
+		SourcePath: "/source/dir",
+		TargetPath: "/target/dir",
+		Password:   "test123",
+		VolumeSize: 1024,
+		Strategy:   CompressionStrategy(999),
+	}
+
+	err := service.CompressDirectory(context.Background(), task)
+	if err == nil {
+		t.Error("Expected error for unknown strategy")
+	}
 }
